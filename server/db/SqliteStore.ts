@@ -152,6 +152,13 @@ export class SqliteStore implements Store {
     return (this.stmt(`SELECT COUNT(*) AS n FROM ${q(table)}${w.sql}`).get(...w.params) as { n: number }).n
   }
 
+  deleteWhere<K extends TableName>(table: K, qy: Query<Tables[K]>): number {
+    const w = this.where(table, qy)
+    // Koşulsuz silme kazara tabloyu boşaltmasın
+    if (!w.sql) throw new Error(`${table}: koşulsuz silme yapılmaz`)
+    return Number(this.stmt(`DELETE FROM ${q(table)}${w.sql}`).run(...w.params).changes)
+  }
+
   kvGet<T>(key: string): T | null {
     const r = this.stmt('SELECT v FROM kv WHERE k = ?').get(key) as { v: string } | undefined
     return r ? (JSON.parse(r.v) as T) : null

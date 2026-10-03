@@ -4,8 +4,30 @@ import { defaultMaster, indexMaster } from '@/domain/lineDef'
 import type { NoteInput } from '@/domain/notes'
 import { buildOverview, stationDetail } from '@/domain/overview'
 import type { Overview, StationDetail } from '@/domain/overview'
-import { DEFAULT_ROLE_PERMISSIONS, requirePermission } from '@/domain/rbac'
-import type { Actor } from '@/domain/rbac'
+import { requirePermission } from '@/domain/rbac'
+import type { Actor, Permission, RolePermissions } from '@/domain/rbac'
+import {
+  AUDIT_LIMIT_MAX,
+  applyRetention,
+  auditCsv,
+  auditQuery,
+  createPerson,
+  loadMaster,
+  loadRbac,
+  purgeExpired,
+  setPersonActive,
+  setRolePermissions,
+  updateAlarmRule,
+  updateBackup,
+  updateIntegration,
+  updateLineConfig,
+  updatePerson,
+  updateRetention,
+  updateStation,
+  updateSubFeed,
+} from '@/domain/admin'
+import type { AuditFilter, ConfigPatch, FeedPatch, PersonInput, RulePatch, StationPatch } from '@/domain/admin'
+import type { RetentionGroup, RoleId, SystemSettings } from '@/domain/types'
 import type { ReworkFields } from '@/domain/rework'
 import { MemoryStore } from '@/domain/store/MemoryStore'
 import { tighteningCsv } from '@/domain/exports'
@@ -28,7 +50,7 @@ import { applyCollected } from '@/pipeline/transform'
 import { LineSim } from '@/sim/lineSim'
 import { runDemoActors, seedDemoAndons } from '@/sim/demoActors'
 import { BackendError } from '../Backend'
-import type { AuthState, Backend, BackendEvent, ConnStatus, SimControl } from '../Backend'
+import type { AdminApi, AuthState, Backend, BackendEvent, ConnStatus, SimControl } from '../Backend'
 
 /**
  * DEMO MODU — kurulum gerektirmeyen web sürümü. Gerçek sistemde ayrı süreçlerde çalışan zincirin
@@ -46,8 +68,8 @@ const USER_KEY = 'tm50-demo-user'
 
 export class DemoBackend implements Backend {
   readonly kind = 'demo' as const
-  readonly master = defaultMaster()
-  private readonly ix = indexMaster(this.master)
+  private masterData = defaultMaster()
+  private ix = indexMaster(this.masterData)
   private store = new MemoryStore()
   private db = new RawDb()
   private lineSim: LineSim | null = null
@@ -64,8 +86,25 @@ export class DemoBackend implements Backend {
   private bootedAt = Date.now()
 
   readonly sim: SimControl
+  readonly admin: AdminApi
+
+  get master() {
+    return this.masterData
+  }
+
+  rbac(): RolePermissions {
+    return loadRbac(this.store)
+  }
+
+  /** Admin değişikliğinden sonra ana veri, indeks ve oturumdaki kullanıcının izinleri yenilenir */
+  private reloadMaster(): void {
+    this.masterData = loadMaster(this.store)
+    this.ix = indexMaster(this.masterData)
+    if (this.actor) this.actor = this.actorOf(this.actor.id)
+  }
 
   constructor() {
+    this.admin = this.makeAdmin()
     this.sim = {
       state: () => ({ playing: this.playing, speed: this.speed }),
       play: () => {
@@ -107,6 +146,7 @@ export class DemoBackend implements Backend {
     setTimeout(() => {
       const t0 = Date.now()
       this.store = new MemoryStore()
+      this.reloadMaster()
       this.db = new RawDb()
       this.runs = []
       this.logRing = []
@@ -178,8 +218,8 @@ export class DemoBackend implements Backend {
   // ---------------------------------------------------------------- oturum (demo: rol seçerek)
 
   private actorOf(personnelNo: string): Actor | null {
-    const p = this.master.people.find((x) => x.personnelNo === personnelNo)
-    return p ? { id: p.personnelNo, name: p.name, role: p.role, permissions: DEFAULT_ROLE_PERMISSIONS[p.role] } : null
+    const p = this.masterData.people.find((x) => x.personnelNo === personnelNo)
+    return p && p.active !== false ? { id: p.personnelNo, name: p.name, role: p.role, permissions: loadRbac(this.store)[p.role] ?? [] } : null
   }
 
   authState(): AuthState {
@@ -370,6 +410,47 @@ export class DemoBackend implements Backend {
   confirmOperation(input: { op: string; sn: string; note?: string | null }) {
     return this.run((c) => confirmOperation(c, input))
   }
+  // ---------------------------------------------------------------- admin (demo: değişiklikler bu sekmede kalır)
+
+  private makeAdmin(): AdminApi {
+    const change = (fn: (c: CommandContext) => unknown) =>
+      this.run(fn).then(() => {
+        this.reloadMaster()
+        this.emit('auth')
+        this.emit('data')
+      })
+    const view = <T>(p: Permission, fn: () => T): Promise<T> => {
+      if (!this.actor) return Promise.reject(new BackendError('Oturum açılmamış', 401))
+      if (!this.actor.permissions.includes(p)) return Promise.reject(new BackendError('Bu işlem için yetkiniz yok', 403))
+      return Promise.resolve(fn())
+    }
+    const serverOnly = (what: string) => Promise.reject(new BackendError(`Demoda ${what} yok; giriş rol seçerek yapılır. Sunucu modunda çalışır.`, 400))
+    return {
+      users: () => view('admin.users', () => this.masterData.people.map((p) => ({ ...p, credential: null }))),
+      createUser: (person: PersonInput) => change((c) => createPerson(c, person)),
+      updateUser: (person: PersonInput) => change((c) => updatePerson(c, person)),
+      setCard: () => serverOnly('kart tanımı'),
+      setActive: (no: string, active: boolean) => change((c) => setPersonActive(c, no, active)),
+      resetPin: () => serverOnly('PIN'),
+      unlock: () => serverOnly('giriş kilidi'),
+      setRolePermissions: (role: RoleId, perms: Permission[]) => change((c) => setRolePermissions(c, role, perms)),
+      saveConfig: (patch: ConfigPatch) => change((c) => updateLineConfig(c, patch)),
+      saveStation: (op: string, patch: StationPatch) => change((c) => updateStation(c, op, patch)),
+      saveFeed: (subOp: string, patch: FeedPatch) => change((c) => updateSubFeed(c, subOp, patch)),
+      saveRule: (code: string, patch: RulePatch) => change((c) => updateAlarmRule(c, code, patch)),
+      saveIntegration: (min: number) => change((c) => updateIntegration(c, { collectIntervalMin: min })),
+      testIntegration: () => view('admin.integration', () => ({ ok: true, ms: 0, error: null, maxIds: this.db.lastIds() })),
+      saveRetention: (r: Record<RetentionGroup, number>) => change((c) => updateRetention(c, r)),
+      retentionPreview: () => view('admin.retention', () => applyRetention(this.store, this.masterData.settings, this.simNow, true)),
+      purge: () => this.run((c) => purgeExpired(c)),
+      saveBackup: (b: SystemSettings['backup']) => change((c) => updateBackup(c, b)),
+      backups: () => view('admin.retention', () => []),
+      backupNow: () => serverOnly('yedek'),
+      audit: (f: AuditFilter) => view('audit.view', () => auditQuery(this.store, { ...f, limit: Math.min(AUDIT_LIMIT_MAX, f.limit ?? 200) })),
+      auditCsv: (f: AuditFilter) => view('audit.view', () => auditCsv(auditQuery(this.store, { ...f, limit: Number.MAX_SAFE_INTEGER }).entries)),
+    }
+  }
+
   async pullNow(): Promise<void> {
     if (!this.actor) throw new BackendError('Oturum açılmamış', 401)
     requirePermission(this.actor, 'integration.pull')

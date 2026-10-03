@@ -35,7 +35,7 @@ export class Collector {
   private readonly store: Store
   private readonly ix: () => MasterIndex
   private readonly reader: RawReader
-  readonly intervalMin: number
+  intervalMin: number
   private readonly now: () => number
   private readonly onRun: (r: CollectorRun) => void
 
@@ -102,6 +102,18 @@ export class Collector {
     this.store.kvSet('collector:runs', runs)
     this.onRun(run)
     return run
+  }
+
+  /** Çekme aralığını değiştirir (admin); bekleyen tur yeni aralığa göre yeniden zamanlanır */
+  setIntervalMin(min: number): void {
+    if (min === this.intervalMin) return
+    this.intervalMin = min
+    const last = this.status().lastSuccessAt
+    if (!this.timer || last === null) return
+    clearTimeout(this.timer)
+    const delay = Math.max(1000, last + min * 60_000 - this.now())
+    this.nextRunAt = this.now() + delay
+    this.timer = setTimeout(() => void this.trigger(), delay)
   }
 
   /** Son 50 tur, en yeni önce */

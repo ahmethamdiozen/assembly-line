@@ -4,7 +4,7 @@
 // görünmeyen ya da eksik kısmı olan davranış PARTIAL.
 import { readFileSync, writeFileSync } from 'node:fs'
 
-const PHASE_DONE = 5
+const PHASE_DONE = 6
 
 /** İster → hedef faz (plan §7) */
 function phase(n) {
@@ -21,21 +21,27 @@ function phase(n) {
 
 /** Durum ve kanıt. Listede olmayanlar MISSING. */
 const STATUS = {
+  'R-081': ['IMPLEMENTED', 'docs/kabul-testleri.md: AC-01…AC-10 senaryoları (adımlar, beklenen sonuç, otomatik karşılık) ve SAT ek senaryoları; `npm run test:kabul` başsız Chrome\'la çalıştırır, sonuçlar docs/kabul-sonuclari.md\'de; CI her gönderimde çalıştırır.'],
+  'R-079': ['IMPLEMENTED', 'docs/kullanim-kilavuzu.md: rollere göre kullanım (teknisyen, üretim lideri, kalite, bakım) ve admin kılavuzu, sık sorulanlar.'],
+  'R-055': ['IMPLEMENTED', 'Admin → Ön montaj beslemesi: beslenen istasyon, kit, buffer min / max, günlük hedef; bir istasyonu iki hücre besleyemez (testli, kabul AC-10).'],
+  'R-054': ['IMPLEMENTED', 'Admin → Kullanıcılar & roller: kullanıcı ekleme / güncelleme / pasifleştirme, istasyon ve vardiya ataması, yetkinlikler, kart, PIN sıfırlama (oturumlar kapanır), kilit açma; rol → izin matrisi açık oturumlarda hemen geçerli. Kilitlenmeye karşı korumalar (son admin, kendi rolü) testli.'],
+  'R-053': ['PARTIAL', 'Admin → Hat & istasyonlar: operasyon adı, istasyon tipi, hedef çevrim, PLC / Cell ID, tool, reçete; takt, eşikler ve vardiyalar (testli). OP kodu fabrika verisindeki istasyon koduyla eşleştiği için ekrandan değişmez; değişiklik collector eşlemesiyle birlikte yapılır (acik-konular.md G1).'],
+  'R-010': ['IMPLEMENTED', 'Admin ekranı (`src/pages/Admin.tsx`, `src/domain/admin.ts`): istasyon ana verisi, kullanıcı / rol / izin, ön montaj besleme, alarm kuralları, entegrasyon (çekme aralığı, bağlantı testi), saklama süreleri ve yedek. Her değişiklik doğrulanır ve audit\'e yazılır (birim, API ve tarayıcı testleri; kabul AC-10).'],
   'R-052': ['IMPLEMENTED', 'İstasyona girişte yetkinlik kontrolü: insanlı istasyon Montaj L2, sıkmalı istasyon ayrıca Torque Qualified (üst seviye alt seviyeyi karşılar); eksikse giriş engellenir ve deneme audit\'e yazılır (testli). Kural varsayımdır (acik-konular.md F6).'],
   'R-051': ['IMPLEMENTED', 'Aktif görev kartı: istasyon, motor S/N ve illüstrasyonu, geçen / tahmini kalan süre, kontrol listesi, takılacak parçalar, sıkma joint\'leri, onay durumu, sıradaki motor; kiosk modu (`?kiosk=1`).'],
   'R-009': ['IMPLEMENTED', 'Bakım & Entegrasyon: PLC / tork / kamera heartbeat\'leri, sensör / IO, istasyon bakım metrikleri, collector ve SQL Server sağlığı, ham fabrika tabloları, uygulama logları (`Maintenance.tsx`, `maintenance.ts`; tarayıcı testi). Alarmlar Alarm Merkezi\'nde.'],
   'R-044': ['IMPLEMENTED', 'Filtredeki tüm kayıtlar Excel\'de açılan CSV olarak indirilir (BOM, ";", ondalık virgül; tarayıcı testi); dışa aktarım audit\'e yazılır.'],
   'R-037': ['IMPLEMENTED', 'Alarm Merkezi: önem, durum, kaynak, istasyon, metin araması ve zaman aralığı filtreleri.'],
   'R-008': ['PARTIAL', 'Kalite rolü OP100 sonuçlarını, NOK / HOLD\'ları, rework ve re-QC kayıtlarını görür ve yönetir (Kalite & Rework, Motor Takibi). Motor görüntüleri motora bağlı ama dosyalar görüntü deposu bağlantısı netleşene kadar yer tutucu (acik-konular.md C4).'],
-  'R-080': ['PARTIAL', 'Kaynak kod ve build / çalıştırma talimatları README\'de; teslim kapsamı sözleşmeye bağlı.'],
-  'R-078': ['PARTIAL', 'README\'de geliştirme kurulumu (Mac / Windows, Docker). Canlı kurulum dokümanı Faz 6.'],
-  'R-075': ['PARTIAL', 'Yedekleme ve geri yükleme komutları (`npm run db:backup` / `db:restore`, bütünlük kontrolüyle). Yedekleme sıklığı ve saklama politikası netleşmedi.'],
+  'R-080': ['IMPLEMENTED', 'Kaynak kod GitHub\'da (https://github.com/ahmethamdiozen/assembly-line); derleme ve çalıştırma README ve docs/kurulum.md\'de; CI iş akışı `.github/workflows/pages.yml`.'],
+  'R-078': ['IMPLEMENTED', 'docs/kurulum.md: hedef ortam, salt-okur SQL Server kullanıcısı, kurulum, HTTPS, Windows servisi (NSSM) / systemd, yedek ve geri yükleme, güncelleme, izleme, sorun giderme. Geliştirme kurulumu README\'de.'],
+  'R-075': ['IMPLEMENTED', 'Günlük otomatik yedek (saat ve sayı Admin\'den), "Şimdi yedek al", geri yükleme komutu (bütünlük kontrolüyle), başka diske kopyalama ve tatbikat adımları docs/kurulum.md 6\'da. Yedek politikası müşteriyle netleşecek (acik-konular.md G3).'],
   'R-073': ['IMPLEMENTED', 'Uygulama logu `logs/app.log` (hatalar, yavaş istekler, collector turları ve hataları, hatalı girişler; 20 MB\'ta döndürülür). Bakım & Entegrasyon\'da seviye filtreli log ekranı ve sistem bilgisi (izin: system.view; testli).'],
-  'R-072': ['PARTIAL', 'PIN / şifreler scrypt ile hash\'li (testli); oturum çerezi HttpOnly, HTTPS\'te Secure. HTTPS sertifika ayarı var (`HTTPS_KEY` / `HTTPS_CERT`); canlı kurulum dokümanı Faz 6.'],
+  'R-072': ['IMPLEMENTED', 'HTTPS doğrudan (`HTTPS_KEY` / `HTTPS_CERT`) ya da reverse proxy ile (`COOKIE_SECURE`), kurulum adımı olarak (docs/kurulum.md 4). PIN / şifreler scrypt ile hash\'li (testli); oturum çerezi HttpOnly, SameSite=Strict, HTTPS\'te Secure; temel güvenlik başlıkları.'],
   'R-071': ['IMPLEMENTED', 'Ölçüm: özet API 8 ms, istasyon ayrıntısı 2 ms, 3 dk\'lık collector turu 6–40 ms, 24 saatlik ilk okuma 0,8 sn. 1 sn\'den yavaş istekler logda işaretlenir.'],
   'R-065': ['PARTIAL', 'REST / JSON API dokümante (docs/api.md). Tercih edilen WebSocket yerine yoklama kullanılıyor (kullanıcı kararı; veri 3–5 dk\'da bir geliyor).'],
   'R-062': ['IMPLEMENTED', 'Uygulama veritabanı SQLite (WAL) + ileri doğru migration (`server/db/sqlite.ts`; sürüm 1 → 2 mevcut veriyi koruyarak test edildi). Sonradan eklenen izinler kayıtlı rol ayarlarına eklenir, admin\'in kaldırdıklarına dokunulmaz.'],
-  'R-058': ['PARTIAL', 'Not, alarm, Andon, rework, HOLD, tork dışa aktarımı, giriş / çıkış, istasyon girişi (reddedilenler dahil), operasyon onayı ve "Şimdi çek" audit log\'a yazılır. Konfigürasyon / ana veri değişiklikleri ve audit ekranı Faz 6.'],
+  'R-058': ['IMPLEMENTED', 'Kullanıcı işlemleri, alarm ve rework değişiklikleri, istasyon girişleri, operasyon onayları, dışa aktarımlar ve tüm konfigürasyon / ana veri değişiklikleri audit\'e kullanıcı, zaman ve önce / sonra değerleriyle yazılır. Admin → Audit kaydı: filtre, önce / sonra farkı, CSV (testli, kabul AC-08, AC-10).'],
   'R-050': ['IMPLEMENTED', 'Personel no ya da RFID kart no + PIN ile giriş (PIN hash\'li, 5 hatalı denemede kilit); Teknisyen Terminali\'nden istasyon / vardiya girişi, vardiya sonuna kadar geçerli, istasyonda tek teknisyen (`terminal.ts`; birim, API ve tarayıcı testleri).'],
   'R-040': ['IMPLEMENTED', 'Teknisyen istasyon panelinden malzeme / kalite / üretim desteği için Andon açar; alarm kaydı oluşur ve kuraldaki ekibe düşer (teknisyen terminalinden de açılabilecek, Faz 5).'],
   'R-007': ['IMPLEMENTED', 'Supervisor hattı ve istasyon performansını görür (Kontrol Merkezi), alarmları onaylar / atar / kapatır (Alarm Merkezi), rework\'ü takip eder (Kalite & Rework). Tarayıcı testiyle doğrulandı.'],
@@ -81,7 +87,7 @@ const STATUS = {
   'R-047': ['IMPLEMENTED', 'Darboğaz çevrim verisinden otomatik: Kontrol Merkezi\'nde son 8 çevrim, raporda seçilen penceredeki ortalama; sıralama ve takt karşılaştırmasıyla (testli). Algoritma varsayımdır (acik-konular.md E2).'],
   'R-048': ['IMPLEMENTED', 'Hata Pareto\'su ve alarm kaynakları Pareto\'su (Kalite & Rework, Alarm Merkezi, KPI & Raporlar).'],
   'R-049': ['IMPLEMENTED', 'KPI & Raporlar üretim günü ve vardiyayla (A / B / C / tüm gün) filtrelenir; filtre adres çubuğunda paylaşılabilir. Veri toplanmadan önceki süre hesaba girmez, ekranda "kısmi veri" olarak işaretlenir (testli).'],
-  'R-056': ['PARTIAL', 'Alarm kuralları ana veride: severity, eskalasyon süresi, varsayılan ekip, açık / kapalı (eskalasyon testli). Admin ekranı Faz 6.'],
+  'R-056': ['IMPLEMENTED', 'Admin → Alarm kuralları: önem, eskalasyon süresi, varsayılan ekip, açık / kapalı; değişiklik yeni alarmlara hemen uygulanır (testli, kabul AC-10).'],
   'R-057': ['IMPLEMENTED', 'Bakım & Entegrasyon sağlık kutuları: fabrika SQL Server (collector son turu / hatası), canlı veri kanalı (veri tazeliği), PLC, tork controller / tool, kamera, uygulama veritabanı; collector tur geçmişi ve "Şimdi çek" (tarayıcı testi; gerçek SQL Server\'la doğrulandı).'],
   'R-059': ['PARTIAL', 'PLC verisi sözleşmesi tanımlı; collector SQL Server\'dan okuyup işliyor (`server/collector/sqlReader.ts`, Docker\'daki SQL Server ile uçtan uca denendi). Gerçek tablo eşlemesi proje başında.'],
   'R-060': ['PARTIAL', 'Tork verisi sözleşmesi tanımlı; SQL Server\'dan okunup işleniyor. Gerçek eşleme proje başında.'],
@@ -94,16 +100,14 @@ const STATUS = {
   'R-069': ['IMPLEMENTED', 'OP kodları ayrı, dar ve kalın yazı yüzüyle (Barlow Semi Condensed) her yerde öne çıkıyor (`.opcode`).'],
   'R-070': ['IMPLEMENTED', 'Durumlar her yerde ikon + metinle; grafikte takt üstü çubuklar etiketli.'],
   'R-074': ['IMPLEMENTED', 'Sunucuya ulaşılamazsa "Sunucuya ulaşılamıyor", fabrika verisi gecikirse "Fabrika verisi gecikiyor" uyarısı; eldeki veri ekranda kalır (tarayıcı testiyle doğrulandı).'],
-  'R-076': ['PARTIAL', 'docs/mimari.md, docs/sql-veri-sozlesmesi.md, docs/kpi-tanimlari.md, docs/acik-konular.md. Detay tasarım dokümanı Faz 6.'],
-  'R-077': ['PARTIAL', 'Kontrol Merkezi, Motor Takibi, Kalite & Rework, Alarm Merkezi, Tork, KPI & Raporlar, Teknisyen Terminali, Bakım & Entegrasyon ve Metrik Rehberi etkileşimli olarak çalışıyor (kurulumsuz demo dahil). Admin ekranları Faz 6.'],
+  'R-076': ['IMPLEMENTED', 'docs/detay-tasarim.md (bileşenler, veritabanı, akışlar, izinler, ekranlar, hata yönetimi, test stratejisi), docs/mimari.md, docs/sql-veri-sozlesmesi.md, docs/kpi-tanimlari.md, docs/api.md, docs/acik-konular.md.'],
+  'R-077': ['IMPLEMENTED', 'Bütün ekranlar etkileşimli olarak çalışıyor ve kurulumsuz demo olarak yayında: https://ahmethamdiozen.github.io/assembly-line/ (her gönderimde testlerden sonra GitHub Pages\'e).'],
 }
 
 const NOTES = {
   'R-002': 'Sapma: veri SQL Server\'dan 3–5 dk\'da bir çekilecek; 1–3 sn hedefi karşılanamaz (bkz. acik-konular.md A2).',
   'R-065': 'Tercih edilen WebSocket kullanılmayacak (kullanıcı kararı); REST + yoklama.',
   'R-050': 'Kimlik doğrulama yöntemi (lokal / Active Directory) netleşmedi (baseline §16); şu an lokal kullanıcı.',
-  'R-075': 'Teknik kapsam netleşmedi (baseline §16).',
-  'R-080': 'Sözleşme kapsamına bağlı.',
 }
 
 const src = readFileSync('01_customer_requirements_clean.md', 'utf8').split('\n')

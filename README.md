@@ -12,7 +12,9 @@ TM50 iki zamanlı 4 silindirli motorun montaj hattı için web tabanlı izleme v
 
 Kapsamın kaynağı [`01_customer_requirements_clean.md`](01_customer_requirements_clean.md).
 
-> **Durum: Faz 5 — saha ve rapor ekranları.** Kontrol Merkezi, Motor Takibi, Kalite & Rework, Alarm Merkezi, Tork, KPI & Raporlar, Teknisyen Terminali, Bakım & Entegrasyon ve Metrik Rehberi hazır; sunucu modunda (SQL Server → collector → SQLite → API) ve demo modunda çalışıyor. Admin ekranları Faz 6'da. İlerleme için [`docs/izlenebilirlik-matrisi.md`](docs/izlenebilirlik-matrisi.md).
+**Kurulumsuz demo:** <https://ahmethamdiozen.github.io/assembly-line/> (rol seçerek giriş; hat ve fabrika verisi tarayıcıda simüle edilir).
+
+> **Durum: 1.0.0 — teslim sürümü (Faz 6).** Bütün ekranlar hazır: Kontrol Merkezi, Motor Takibi, Kalite & Rework, Alarm & Andon, Tork, KPI & Raporlar, Teknisyen Terminali, Bakım & Entegrasyon, Admin ve Metrik Rehberi. Sunucu modunda (SQL Server → collector → SQLite → API) ve kurulumsuz demo olarak çalışıyor. URS kabul kriterleri AC-01…AC-10 otomatik test ediliyor ([`docs/kabul-sonuclari.md`](docs/kabul-sonuclari.md)). İsterlerin durumu: [`docs/izlenebilirlik-matrisi.md`](docs/izlenebilirlik-matrisi.md).
 
 ## Çalıştırma
 
@@ -75,7 +77,18 @@ npm run dev:demo   # http://localhost:5173 — backend gerekmez
   - `#/bakim?tab=ham` ham fabrika tablolarını, `tab=log` uygulama loglarını açar (Bakım ve Admin rolleri).
 - **Demo personeli:** Demoda koşulu bitmiş eski alarmları vardiya amiri onaylar, ilgili ekip kapatır; iki örnek Andon çağrısı vardır (`src/sim/demoActors.ts`). Sunucu modunda bu yoktur; alarmları gerçek kullanıcılar yönetir.
 
+### Canlı kurulum
+
+Fabrika sunucusuna kurulum, servis olarak çalıştırma, HTTPS, yedek ve güncelleme: [`docs/kurulum.md`](docs/kurulum.md). Kısaca:
+
+```bash
+npm ci && npm run build && npm run build:server
+npm start          # arayüz ve API aynı adreste; dist/ ve dist-server/
+```
+
 ### Yedekleme
+
+Sunucu her gün Admin → Saklama & yedek'te ayarlanan saatte otomatik yedek alır; Admin ekranından "Şimdi yedek al" da var. Komut satırından:
 
 ```bash
 npm run db:backup                          # backups/tm50-YYYYMMDD-HHMM.db (sunucu çalışırken de alınabilir)
@@ -87,36 +100,46 @@ Sunucu logları `logs/app.log` dosyasına yazılır (JSON satırları). Her iste
 ## Komutlar
 
 ```bash
-npm test           # birim ve uçtan uca veri hattı testleri (Vitest)
-npm run typecheck  # arayüz + sunucu TypeScript kontrolü
-npm run lint       # oxlint
-npm run build      # dist/ — statik dosyalar
-npm run build:demo # demo sürümü
-npm run docs:matrix # izlenebilirlik matrisini yeniden üret
+npm test             # birim, veri hattı, depo ve API testleri (Vitest)
+npm run test:kabul   # kabul testleri AC-01…AC-10: demoyu derler, başsız Chrome'la çalıştırır → docs/kabul-sonuclari.md
+npm run typecheck    # arayüz + sunucu TypeScript kontrolü
+npm run lint         # oxlint
+npm run build        # dist/ — arayüz
+npm run build:server # dist-server/ — sunucu (npm start)
+npm run build:demo   # kurulumsuz demo
+npm run docs:matrix  # izlenebilirlik matrisini yeniden üret
 ```
+
+`main` dalına her gönderimde GitHub Actions lint, testler ve kabul testlerini çalıştırır, geçerse demoyu GitHub Pages'te yayınlar (`.github/workflows/pages.yml`).
 
 ## Dokümanlar
 
 | Doküman | İçerik |
 |---|---|
-| [`docs/mimari.md`](docs/mimari.md) | Veri yolu, iki mod, klasörler, kararlar |
+| [`docs/kullanim-kilavuzu.md`](docs/kullanim-kilavuzu.md) | Rollere göre kullanım ve admin kılavuzu |
+| [`docs/kurulum.md`](docs/kurulum.md) | Canlı kurulum, servis, HTTPS, yedek / geri yükleme, güncelleme, sorun giderme |
+| [`docs/mimari.md`](docs/mimari.md) | Veri yolu, iki mod, klasörler, güvenlik, kararlar |
+| [`docs/detay-tasarim.md`](docs/detay-tasarim.md) | Bileşenler, uygulama veritabanı, akışlar, rol izinleri, ekranlar, hata yönetimi |
 | [`docs/acik-konular.md`](docs/acik-konular.md) | Müşteriye sorulacaklar ve cevap gelene kadar geçerli varsayımlar |
 | [`docs/sql-veri-sozlesmesi.md`](docs/sql-veri-sozlesmesi.md) | Fabrika SQL Server'ından beklenen tablolar ve collector'ın her birini nasıl işlediği |
 | [`docs/kpi-tanimlari.md`](docs/kpi-tanimlari.md) | KPI formülleri, istasyon durumları, alarm kuralları, rework akışı |
 | [`docs/api.md`](docs/api.md) | REST API uç noktaları, oturum, rol izinleri |
+| [`docs/kabul-testleri.md`](docs/kabul-testleri.md) | AC-01…AC-10 ve SAT senaryoları |
+| [`docs/kabul-sonuclari.md`](docs/kabul-sonuclari.md) | Son otomatik kabul testi sonuçları |
 | [`docs/izlenebilirlik-matrisi.md`](docs/izlenebilirlik-matrisi.md) | R-001…R-081 → durum ve kod kanıtı |
 
 ## Proje yapısı
 
 ```
 src/domain/     ana veri (lineDef), tipler, depo arayüzü (Store, MemoryStore), alarm ve rework kuralları,
-                türetilmiş görünümler (lineState), KPI, darboğaz, Pareto       ← sunucu ve tarayıcı ortak
+                ekran görünümleri, KPI ve raporlar, komutlar (RBAC + audit), terminal, admin   ← sunucu ve tarayıcı ortak
 src/pipeline/   SQL Server satır tipleri (rows), bellek içi "SQL Server" (rawDb), collector dönüştürücüsü (transform)
 src/sim/        deterministik hat simülatörü ve demo hikâyeleri
-src/components/, src/pages/   arayüz
+src/data/       Backend arayüzü: ApiBackend (REST) ve DemoBackend (tüm zincir tarayıcıda)
+src/components/, src/pages/   arayüz (src/pages/admin/: Admin sekmeleri)
 server/         simulator/ (SQL Server'a yazar), collector/ (SQL Server'dan okur), api/ (Fastify),
-                auth/ (giriş, oturum), db/ (SQLite deposu, migration, yedek), sql/schema.sql (fabrika şeması)
-scripts/        izlenebilirlik matrisi üreticisi
+                auth/ (giriş, oturum, kimlik bilgileri), db/ (SQLite deposu, migration, yedek), sql/schema.sql (fabrika şeması)
+scripts/        izlenebilirlik matrisi üreticisi, kabul testi koşucusu
 docs/           dokümanlar
 ```
 

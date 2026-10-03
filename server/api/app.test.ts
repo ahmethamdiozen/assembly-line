@@ -1,6 +1,8 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { defaultMaster, indexMaster } from '@/domain/lineDef'
+import { loadMaster, loadRbac } from '@/domain/admin'
 import { DEFAULT_ROLE_PERMISSIONS } from '@/domain/rbac'
+import type { BackupInfo } from '@/domain/maintenance'
 import { dayStartOf } from '@/domain/shifts'
 import { RawDb } from '@/pipeline/rawDb'
 import { applyCollected } from '@/pipeline/transform'
@@ -11,20 +13,33 @@ import { openDatabase } from '../db/sqlite'
 import { buildApp } from './app'
 
 const t0 = new Date(2026, 9, 3, 14, 30).getTime()
-const master = defaultMaster()
-const ix = indexMaster(master)
-// Testi hızlı tutmak için sadece birkaç kişiye PIN atanır (scrypt bilerek yavaştır)
-const people = master.people.filter((p) => ['T-1044', 'S-0101', 'Q-0201', 'M-0301', 'A-0001'].includes(p.personnelNo))
+const ix = indexMaster(defaultMaster())
+// Testi hızlı tutmak için sadece birkaç kişiye PIN atanır (scrypt bilerek yavaştır); testte eklenenler de dahil
+const SEEDED = new Set(['T-1044', 'S-0101', 'Q-0201', 'M-0301', 'A-0001'])
+const DEFAULT_NOS = new Set(defaultMaster().people.map((p) => p.personnelNo))
 
 const db = openDatabase(':memory:')
 const store = new SqliteStore(db)
-const auth = new Auth({ db, people: () => people, rbac: () => DEFAULT_ROLE_PERMISSIONS })
+const auth = new Auth({ db, people: () => loadMaster(store).people.filter((p) => SEEDED.has(p.personnelNo) || !DEFAULT_NOS.has(p.personnelNo)), rbac: () => loadRbac(store) })
 let pulls = 0
+let reloads = 0
+const backups: BackupInfo[] = []
 const app = buildApp({
   store,
-  master: () => master,
-  ix: () => ix,
-  rbac: () => DEFAULT_ROLE_PERMISSIONS,
+  master: () => loadMaster(store),
+  ix: () => indexMaster(loadMaster(store)),
+  rbac: () => loadRbac(store),
+  onMasterChange: () => reloads++,
+  backups: {
+    list: () => backups,
+    create: (t) => {
+      const b = { file: `backups/tm50-test-${backups.length + 1}.db`, t, sizeBytes: 4096 }
+      backups.unshift(b)
+      return b
+    },
+    prune: (keep) => backups.splice(keep).length,
+  },
+  integrationTest: async () => ({ ok: true, ms: 4, error: null, maxIds: { OperationEvents: 10 } }),
   auth,
   now: () => t0,
   collector: {
@@ -249,5 +264,105 @@ describe('API: Faz 5 ekranları', () => {
     expect((await get('/api/v1/system/logs?level=error', mt)).json().entries[0].scope).toBe('collector')
     expect((await get('/api/v1/system/logs?level=debug', mt)).statusCode).toBe(400)
     expect((await get('/api/v1/system/info', mt)).json().appDb.schemaVersion).toBe(2)
+  })
+})
+
+describe('API: Admin ve konfigürasyon (R-010, R-053–R-058, R-075)', () => {
+  const put = (url: string, payload: object, cookie: string) => app.inject({ method: 'PUT', url, payload, headers: { cookie } })
+
+  it('hat ayarı ve istasyon ana verisi değişir; ana veri sürümü artar; yetkisiz rol 403', async () => {
+    const a = await login('A-0001')
+    const rev0 = (await get('/api/v1/master', a)).json().rev
+    const r = await put('/api/v1/admin/config', { patch: { taktSec: 480, bilinmeyen: 1 } }, a)
+    expect(r.statusCode, r.body).toBe(200)
+    expect([r.json().master.config.taktSec, r.json().master.config.bilinmeyen, r.json().rev]).toEqual([480, undefined, rev0 + 1])
+    expect(reloads).toBeGreaterThan(0)
+    expect((await get('/api/v1/status', a)).json().masterRev).toBe(rev0 + 1)
+    expect((await put('/api/v1/admin/stations/OP070', { patch: { targetCycleSec: 5 } }, a)).statusCode).toBe(400)
+    expect((await put('/api/v1/admin/stations/OP070', { patch: { targetCycleSec: 420 } }, a)).json().master.stations.find((s: { op: string }) => s.op === 'OP070').targetCycleSec).toBe(420)
+    expect((await put('/api/v1/admin/config', { patch: { taktSec: 500 } }, await login('S-0101'))).statusCode).toBe(403)
+    await put('/api/v1/admin/config', { patch: { taktSec: 450 } }, a)
+  })
+
+  it('yeni kullanıcı PIN ve kartla eklenir, ikisiyle de girer; aynı kart ikinci kişiye verilemez (400, oturum düşmez)', async () => {
+    const a = await login('A-0001')
+    const person = { personnelNo: 't-1099', name: 'Deniz Yalın', role: 'technician', shift: 'A', station: 'OP070', qualifications: ['Montaj L2'] }
+    const r = await post('/api/v1/admin/users', { person, pin: '4321', rfid: 'RF9999' }, a)
+    expect(r.statusCode, r.body).toBe(200)
+    expect((await app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { login: 'RF9999', secret: '4321' } })).statusCode).toBe(200)
+    await login('T-1099', '4321')
+    const users = (await get('/api/v1/admin/users', a)).json().users as { personnelNo: string; credential: { rfid: string; active: boolean } | null }[]
+    expect(users.find((u) => u.personnelNo === 'T-1099')!.credential).toMatchObject({ rfid: 'RF9999', active: true })
+    expect(JSON.stringify(users)).not.toContain('scrypt')
+    const dup = await put('/api/v1/admin/users/S-0101/card', { rfid: 'RF9999' }, a)
+    expect([dup.statusCode, dup.json().error]).toEqual([400, 'Bu kart T-1099 kullanıcısına tanımlı'])
+    expect((await get('/api/v1/auth/me', a)).statusCode).toBe(200)
+    expect((await post('/api/v1/admin/users', { person, pin: '12' }, a)).statusCode).toBe(400)
+    expect(store.find('audit_log', { where: { action: 'user.create' } }).length).toBe(1)
+  })
+
+  it('PIN sıfırlama açık oturumları kapatır; PIN audit\'e yazılmaz; pasif kullanıcı giremez', async () => {
+    const a = await login('A-0001')
+    const t = await login('T-1099', '4321')
+    expect((await post('/api/v1/admin/users/T-1099/pin', { pin: '5555' }, a)).statusCode).toBe(200)
+    expect((await get('/api/v1/auth/me', t)).statusCode).toBe(401)
+    const pinAudit = store.find('audit_log', { where: { action: 'user.pin' } })[0]
+    expect([pinAudit.entityId, pinAudit.before, pinAudit.after]).toEqual(['T-1099', null, null])
+    const t2 = await login('T-1099', '5555')
+    expect((await post('/api/v1/admin/users/T-1099/active', { active: false }, a)).statusCode).toBe(200)
+    expect((await get('/api/v1/auth/me', t2)).statusCode).toBe(401)
+    expect((await app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { login: 'T-1099', secret: '5555' } })).statusCode).toBe(401)
+    expect((await post('/api/v1/admin/users/A-0001/active', { active: false }, a)).statusCode).toBe(400)
+    await post('/api/v1/admin/users/T-1099/active', { active: true }, a)
+    await login('T-1099', '5555')
+  })
+
+  it('rol izni değişikliği açık oturumda hemen geçerli olur', async () => {
+    const a = await login('A-0001')
+    const t = await login('T-1044')
+    const perms = DEFAULT_ROLE_PERMISSIONS.technician.filter((p) => p !== 'note.create')
+    expect((await put('/api/v1/admin/roles/technician', { permissions: perms }, a)).json().rbac.technician).not.toContain('note.create')
+    expect((await post('/api/v1/notes', { op: 'OP070', type: 'info', text: 'deneme' }, t)).statusCode).toBe(403)
+    await put('/api/v1/admin/roles/technician', { permissions: DEFAULT_ROLE_PERMISSIONS.technician }, a)
+    expect((await post('/api/v1/notes', { op: 'OP070', type: 'info', text: 'deneme' }, t)).statusCode).toBe(200)
+    expect((await put('/api/v1/admin/roles/admin', { permissions: ['audit.view'] }, a)).statusCode).toBe(400)
+  })
+
+  it('besleme, alarm kuralı, çekme aralığı ve bağlantı testi', async () => {
+    const a = await login('A-0001')
+    expect((await put('/api/v1/admin/feeds/OP206', { patch: { bufferMin: 12 } }, a)).json().master.subFeeds.find((f: { subOp: string }) => f.subOp === 'OP206').bufferMin).toBe(12)
+    expect((await put('/api/v1/admin/rules/CYC-TAKT', { patch: { escalationMin: 7 } }, a)).json().master.rules.find((r: { code: string }) => r.code === 'CYC-TAKT').escalationMin).toBe(7)
+    expect((await put('/api/v1/admin/integration', { collectIntervalMin: 9 }, a)).statusCode).toBe(400)
+    expect((await put('/api/v1/admin/integration', { collectIntervalMin: 4 }, a)).json().master.config.collectIntervalMin).toBe(4)
+    expect((await post('/api/v1/admin/integration/test', {}, a)).json()).toMatchObject({ ok: true })
+    expect((await post('/api/v1/admin/integration/test', {}, await login('M-0301'))).statusCode).toBe(403)
+  })
+
+  it('saklama önizlemesi ve temizlik, yedek alma; işlemler audit\'e yazılır', async () => {
+    const a = await login('A-0001')
+    const pv = (await get('/api/v1/admin/retention/preview', a)).json().groups as { group: string; rows: number }[]
+    expect(pv.map((g) => g.group)).toEqual(['trace', 'tightening', 'images', 'events', 'alarms', 'audit'])
+    expect(pv.every((g) => g.rows === 0)).toBe(true)
+    expect((await post('/api/v1/admin/retention/purge', {}, a)).statusCode).toBe(200)
+    expect((await put('/api/v1/admin/retention', { retention: { trace: 3650, tightening: 3650, images: 5, events: 1825, alarms: 730, audit: 730 } }, a)).statusCode).toBe(400)
+    const b = await post('/api/v1/admin/backups', {}, a)
+    expect([b.statusCode, b.json().backup.file]).toEqual([200, 'backups/tm50-test-1.db'])
+    expect((await get('/api/v1/admin/backups', a)).json().backups).toHaveLength(1)
+    expect((await post('/api/v1/admin/backups', {}, await login('S-0101'))).statusCode).toBe(403)
+    expect(store.find('audit_log', { where: { action: 'backup.create' } }).length).toBe(1)
+  })
+
+  it('audit görüntüleyici filtreler ve CSV verir (R-058)', async () => {
+    const a = await login('A-0001')
+    const r = (await get('/api/v1/audit?action=config.&limit=50', a)).json()
+    expect(r.total).toBeGreaterThan(3)
+    expect(r.entries.every((e: { action: string }) => e.action.startsWith('config.'))).toBe(true)
+    const st = (await get('/api/v1/audit?entity=station&entityId=OP070', a)).json()
+    expect(st.entries.map((e: { action: string }) => e.action)).toContain('config.station')
+    expect((await get(`/api/v1/audit?from=${t0}&to=${t0 - 1}`, a)).statusCode).toBe(400)
+    const csv = await get('/api/v1/audit.csv?action=user.', a)
+    expect(csv.body.startsWith('\uFEFFZaman;Kullanıcı;İşlem;İşlem kodu;Kayıt')).toBe(true)
+    expect(csv.body).toContain('Kullanıcı ekleme;user.create')
+    expect((await get('/api/v1/audit.csv', await login('S-0101'))).statusCode).toBe(403)
   })
 })

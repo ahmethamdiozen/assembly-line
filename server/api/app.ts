@@ -14,13 +14,17 @@ import { tighteningCsv, tighteningCsvName } from '@/domain/exports'
 import { alarmDetail, alarmList, motorDetail, qualityView, searchMotors, tighteningRows, tighteningView } from '@/domain/views'
 import type { TighteningFilter, TimeWindow } from '@/domain/views'
 import { maintenanceView } from '@/domain/maintenance'
-import type { IntegrationStatus, LogEntry, LogLevel, RawPreview, SystemInfo } from '@/domain/maintenance'
+import type { BackupInfo, IntegrationStatus, IntegrationTest, LogEntry, LogLevel, RawPreview, SystemInfo } from '@/domain/maintenance'
+import { masterRev } from '@/domain/admin'
 import { kpiReport } from '@/domain/reports'
 import { confirmOperation, stationLogin, stationLogout, terminalView } from '@/domain/terminal'
 import { RAW_TABLES } from '@/pipeline/rows'
 import type { LastIds, RawTable } from '@/pipeline/rows'
 import type { AndonType, MasterData, NoteType, ReworkState } from '@/domain/types'
-import { Auth, AuthError } from '../auth/auth'
+import { Auth, AuthError, CredentialError } from '../auth/auth'
+import { HttpError, body, oneOf, optStr, str } from './http'
+import type { Body } from './http'
+import { registerAdmin } from './admin'
 import type { Collector } from '../collector/Collector'
 
 /**
@@ -44,17 +48,13 @@ export interface AppDeps {
     logs(minLevel: LogLevel): LogEntry[]
     info(): SystemInfo
   }
+  /** Ana veri ya da izinler değişince (admin) çağrılır: indeks ve collector aralığı yenilenir */
+  onMasterChange: () => void
+  backups: { list(): BackupInfo[]; create(now: number): BackupInfo; prune(keep: number): number } | null
+  integrationTest: () => Promise<IntegrationTest>
   now?: () => number
   secureCookies?: boolean
   logger?: boolean | { level: string; file?: string }
-}
-
-class HttpError extends Error {
-  readonly status: number
-  constructor(status: number, message: string) {
-    super(message)
-    this.status = status
-  }
 }
 
 declare module 'fastify' {
@@ -69,20 +69,6 @@ function cookieOf(req: FastifyRequest, name: string): string | undefined {
     if (k === name) return decodeURIComponent(v.join('='))
   }
   return undefined
-}
-
-type Body = Record<string, unknown>
-const body = (req: FastifyRequest): Body => (req.body && typeof req.body === 'object' ? (req.body as Body) : {})
-function str(b: Body, k: string, required = true): string {
-  const v = b[k]
-  if (typeof v === 'string') return v
-  if (!required && (v === undefined || v === null)) return ''
-  throw new HttpError(400, `"${k}" alanı gerekli`)
-}
-const optStr = (b: Body, k: string) => (typeof b[k] === 'string' && (b[k] as string).trim() ? (b[k] as string) : null)
-function oneOf<T extends string>(v: string, allowed: readonly T[], k: string): T {
-  if (!(allowed as readonly string[]).includes(v)) throw new HttpError(400, `"${k}" geçersiz: ${v}`)
-  return v as T
 }
 
 export function buildApp(deps: AppDeps): FastifyInstance {
@@ -100,6 +86,11 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     if (path.startsWith('/api/') && !PUBLIC.has(path) && !req.actor) throw new HttpError(401, 'Oturum açılmamış ya da süresi dolmuş')
   })
 
+  // Temel güvenlik başlıkları (R-072)
+  app.addHook('onSend', async (_req, reply) => {
+    void reply.header('X-Content-Type-Options', 'nosniff').header('Referrer-Policy', 'same-origin').header('X-Frame-Options', 'SAMEORIGIN')
+  })
+
   // Yavaş istekler loglanır (NFR-001: standart etkileşimler 2 sn içinde)
   app.addHook('onResponse', async (req, reply) => {
     if (reply.elapsedTime > 1000) req.log.warn({ url: req.url, ms: Math.round(reply.elapsedTime) }, 'yavaş istek')
@@ -110,7 +101,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     if (err instanceof HttpError) status = err.status
     else if (err instanceof AuthError) status = 401
     else if (err instanceof ForbiddenError) status = 403
-    else if (err instanceof NoteError || err instanceof CommandError || err instanceof AlarmTransitionError || err instanceof ReworkTransitionError) status = 400
+    else if (err instanceof CredentialError || err instanceof NoteError || err instanceof CommandError || err instanceof AlarmTransitionError || err instanceof ReworkTransitionError) status = 400
     else if (err.statusCode && err.statusCode < 500) status = err.statusCode
     // Kendi ürettiğimiz hatalar (HttpError) mesajıyla döner; beklenmeyen hatanın ayrıntısı sadece loga yazılır
     const ours = err instanceof HttpError
@@ -148,7 +139,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
   app.get('/api/v1/auth/me', async (req) => ({ user: req.actor }))
 
-  app.get('/api/v1/master', async () => ({ master: deps.master(), rbac: deps.rbac() }))
+  app.get('/api/v1/master', async () => ({ master: deps.master(), rbac: deps.rbac(), rev: masterRev(store) }))
 
   app.get('/api/v1/status', async () => {
     const c = deps.collector?.status()
@@ -162,6 +153,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       nextPullAt: c?.nextRunAt ?? null,
       running: c?.running ?? false,
       error: run && !run.ok ? run.error : null,
+      masterRev: masterRev(store),
     }
   })
 
@@ -285,12 +277,6 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     return deps.system.info()
   })
 
-  app.get<{ Querystring: { limit?: string } }>('/api/v1/audit', async (req) => {
-    requirePermission(req.actor!, 'audit.view')
-    const limit = Math.min(500, Math.max(1, Number(req.query.limit ?? 100) || 100))
-    return { entries: store.find('audit_log', { orderBy: 't', desc: true, limit }) }
-  })
-
   // ---------------------------------------------------------------- komutlar
 
   app.post('/api/v1/notes', async (req) => {
@@ -344,6 +330,8 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     const b = body(req)
     return decideHold(ctx(req), req.params.id, oneOf(str(b, 'decision'), ['release', 'rework'] as const, 'decision'), optStr(b, 'note'))
   })
+
+  registerAdmin(app, deps, ctx, now)
 
   return app
 }

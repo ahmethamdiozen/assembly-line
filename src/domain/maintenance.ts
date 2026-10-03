@@ -133,6 +133,22 @@ export interface IntegrationStatus {
   readPosition: { table: RawTable; lastId: number }[]
 }
 
+/** Admin'in "Bağlantıyı test et" sonucu */
+export interface IntegrationTest {
+  ok: boolean
+  ms: number
+  error: string | null
+  /** Tablo başına en büyük Id (bağlantı varsa) */
+  maxIds: Partial<Record<RawTable, number>> | null
+}
+
+/** Yedek dosyası */
+export interface BackupInfo {
+  file: string
+  t: number
+  sizeBytes: number
+}
+
 /** Fabrika tablosundan son satırlar (ham, collector'ın okuduğu biçimde) */
 export interface RawPreview {
   table: RawTable
@@ -155,7 +171,7 @@ export interface SystemInfo {
   mode: 'server' | 'demo'
   appDb: { kind: string; path: string | null; sizeBytes: number | null; schemaVersion: number | null }
   rows: Partial<Record<TableName, number>>
-  backups: { file: string; t: number; sizeBytes: number }[]
+  backups: BackupInfo[]
   logFile: string | null
   startedAt: number
   version: string

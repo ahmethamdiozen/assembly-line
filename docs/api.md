@@ -24,10 +24,9 @@ Arayüz ile sunucu arasındaki JSON API (R-065). Kod: `server/api/app.ts`; testl
 | POST | `/auth/login` | herkese açık | `{ login, secret }`. `login` personel no ya da RFID kart no. Yanıt `{ user }`. 5 hatalı denemede 5 dk kilit. |
 | POST | `/auth/logout` | oturum | Oturumu kapatır |
 | GET | `/auth/me` | oturum | `{ user: { id, name, role, permissions[] } }` |
-| GET | `/master` | oturum | Ana veri (istasyonlar, komponentler, kurallar, kişiler) ve rol izinleri |
-| GET | `/status` | oturum | Veri tazeliği: `watermark` (bu ana kadarki fabrika verisi işlendi), `lastPullAt`, `nextPullAt`, `intervalMin`, `error` |
+| GET | `/master` | oturum | `{ master, rbac, rev }`: ana veri (istasyonlar, besleme, komponentler, kurallar, kişiler, hat ve sistem ayarları), rol izinleri ve ana veri sürümü |
+| GET | `/status` | oturum | Veri tazeliği: `watermark` (bu ana kadarki fabrika verisi işlendi), `lastPullAt`, `nextPullAt`, `intervalMin`, `error`; `masterRev` değişince arayüz ana veriyi ve izinleri yeniden yükler |
 | POST | `/collector/pull` | `integration.pull` | Collector'ı beklemeden çalıştırır ("Şimdi çek"); `{ run }` |
-| GET | `/audit?limit=100` | `audit.view` | Audit kayıtları, en yeni önce (en fazla 500) |
 | GET | `/integration` | oturum | Veri hattı: kaynak, çekme aralığı, son / sonraki tur, son 50 tur (satır, süre, hata), tablo başına okuma konumu (`IntegrationStatus`) |
 | GET | `/integration/raw/:table?limit=50` | `system.view` | Fabrika SQL Server tablosunun son satırları (en fazla 200), collector'ın okuduğu biçimde. Tablolar: `docs/sql-veri-sozlesmesi.md` |
 | GET | `/system/logs?level=info` | `system.view` | `logs/app.log`'un son kısmı, en yeni önce; `level`: `info`, `warn`, `error` (en az bu seviye) |
@@ -71,6 +70,35 @@ Her komut yetki kontrolünden geçer ve audit log'a kullanıcı ve zamanla yazı
 | POST | `/terminal/logout` | oturum | Kullanıcının açık istasyon girişlerini kapatır; `{ login }` |
 | POST | `/terminal/confirm` | `op.complete` | `{ op, sn, note? }`. "Operasyonu tamamla": istasyona giriş yapmış olmak ve motorun o istasyonda olması gerekir; motor ve deneme başına bir kez. |
 
+## Admin ve audit (R-010, R-053–R-058, R-075)
+
+Ana veriyi ya da izinleri değiştiren uç noktalar `{ master, rbac, rev }` döndürür. Her değişiklik doğrulanır (geçersizse 400 ve açıklama) ve audit'e sadece değişen alanların önceki / sonraki değerleriyle yazılır. Gövdede tanımsız alanlar yok sayılır.
+
+| Yöntem | Yol | İzin | Gövde / açıklama |
+|---|---|---|---|
+| PUT | `/admin/config` | `admin.stations` | `{ patch: { taktSec?, warnRatio?, alarmRatio?, heartbeatTimeoutSec?, dayStartHour?, variant?, shifts? } }`. Vardiyalar üretim günü başından boşluksuz 24 saati kaplamalı. |
+| PUT | `/admin/stations/:op` | `admin.stations` | `{ patch: { name?, type?, targetCycleSec?, plcId?, cellId?, tool?, recipe? } }`. OP kodu değişmez. |
+| GET | `/admin/users` | `admin.users` | Kişiler ve kimlik bilgisi durumu (`credential: { rfid, active, locked, failedAttempts, updatedAt }`); şifre hash'i dönmez |
+| POST | `/admin/users` | `admin.users` | `{ person: { personnelNo, name, role, shift, station, qualifications }, pin, rfid? }` |
+| PUT | `/admin/users/:no` | `admin.users` | `{ person: { name, role, shift, station, qualifications } }`. Kendi admin rolünüzü kaldıramazsınız; en az bir aktif admin kalır. |
+| PUT | `/admin/users/:no/card` | `admin.users` | `{ rfid }` (boş: kart kaldırılır). Aynı kart iki kişide olamaz. |
+| POST | `/admin/users/:no/active` | `admin.users` | `{ active }`. Pasif kullanıcı giremez, açık oturumları kapanır; kendinizi pasifleştiremezsiniz. |
+| POST | `/admin/users/:no/pin` | `admin.users` | `{ pin }` (4–64 karakter). Açık oturumlar kapanır; PIN audit'e yazılmaz. |
+| POST | `/admin/users/:no/unlock` | `admin.users` | Hatalı deneme kilidini açar |
+| PUT | `/admin/roles/:role` | `admin.users` | `{ permissions: [...] }`. Admin rolünden `admin.users` kaldırılamaz. Açık oturumlarda hemen geçerli. |
+| PUT | `/admin/feeds/:subOp` | `admin.routing` | `{ patch: { mainOp?, kit?, bufferMin?, bufferMax?, dailyTarget? } }`. Bir istasyonu iki hücre besleyemez. |
+| PUT | `/admin/rules/:code` | `admin.alarmRules` | `{ patch: { name?, severity?, escalationMin?, team?, enabled? } }` |
+| PUT | `/admin/integration` | `admin.integration` | `{ collectIntervalMin }` (3–5). Collector'a hemen uygulanır. |
+| POST | `/admin/integration/test` | `admin.integration` | Fabrika SQL Server'ına bağlanıp tablo başına en büyük Id'yi okur: `{ ok, ms, error, maxIds }` |
+| PUT | `/admin/retention` | `admin.retention` | `{ retention: { trace, tightening, images, events, alarms, audit } }` (gün; grup başına alt sınır, en fazla 7300) |
+| GET | `/admin/retention/preview` | `admin.retention` | Süresi dolmuş kayıt sayıları (grup ve tablo başına) |
+| POST | `/admin/retention/purge` | `admin.retention` | Süresi dolanları siler (açık alarm, süren rework / HOLD ve hattaki motor hariç); sayılar audit'e |
+| PUT | `/admin/backup` | `admin.retention` | `{ enabled, hour, keep }`: günlük otomatik yedek |
+| GET | `/admin/backups` | `admin.retention` | Yedek dosyaları, en yeni önce |
+| POST | `/admin/backups` | `admin.retention` | Hemen yedek alır, eski yedekleri `keep`'e göre siler; audit'e yazılır |
+| GET | `/audit?from=&to=&user=&action=&entity=&entityId=&limit=&offset=` | `audit.view` | `{ entries, total }`, en yeni önce. `action` işlem adı parçası (ör. `config.`), `user` ad ya da no parçası. Varsayılan son 7 gün, en fazla 1 yıl; sayfa en fazla 1000. |
+| GET | `/audit.csv?…` | `audit.view` | Aynı filtredeki tüm kayıtlar (Excel'de açılan CSV); dışa aktarım audit'e yazılır |
+
 ## Rol izinleri (varsayılan)
 
 | Rol | İzinler |
@@ -79,6 +107,6 @@ Her komut yetki kontrolünden geçer ve audit log'a kullanıcı ve zamanla yazı
 | Üretim Lideri / Supervisor | not, Andon, HOLD, alarm onay / atama / kapatma, rework yönetimi |
 | Kalite | not, HOLD, HOLD kararı, alarm onay / atama / kapatma, rework yönetimi |
 | Bakım / Otomasyon | not, alarm onay / atama / kapatma, "Şimdi çek", uygulama logları ve sistem bilgisi |
-| Admin | tümü (yönetim ekranları Faz 6) |
+| Admin | tümü |
 
-Görüntüleme tüm giriş yapmış kullanıcılara açıktır. İzinler admin ekranından değiştirilebilecek (Faz 6).
+Görüntüleme tüm giriş yapmış kullanıcılara açıktır. İzinler Admin → Kullanıcılar & roller'den değiştirilir.

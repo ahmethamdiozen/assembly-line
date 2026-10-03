@@ -2,11 +2,10 @@ import { LoaderCircle } from 'lucide-react'
 import { Suspense, lazy } from 'react'
 import { HashRouter, Route, Routes } from 'react-router-dom'
 import { AppLayout } from '@/components/layout/AppLayout'
-import { NAV } from '@/components/layout/nav'
-import ControlCenter from '@/pages/ControlCenter'
-import Planned from '@/pages/Planned'
+import NotFound from '@/pages/NotFound'
 
-// Ekranlar ayrı paketlerde yüklenir; ilk açılış sadece Kontrol Merkezi'ni indirir
+// Ekranlar ayrı paketlerde yüklenir; giriş ekranı grafik ve tablo kütüphanelerini beklemez
+const ControlCenter = lazy(() => import('@/pages/ControlCenter'))
 const MotorTrace = lazy(() => import('@/pages/MotorTrace'))
 const QualityRework = lazy(() => import('@/pages/QualityRework'))
 const Alarms = lazy(() => import('@/pages/Alarms'))
@@ -15,8 +14,8 @@ const Kpi = lazy(() => import('@/pages/Kpi'))
 const Terminal = lazy(() => import('@/pages/Terminal'))
 const Maintenance = lazy(() => import('@/pages/Maintenance'))
 const Guide = lazy(() => import('@/pages/Guide'))
+const Admin = lazy(() => import('@/pages/Admin'))
 
-const BUILT = new Set(['/', '/motor', '/kalite', '/alarmlar', '/tork', '/kpi', '/terminal', '/bakim', '/rehber'])
 
 function Loading() {
   return (
@@ -43,10 +42,8 @@ export default function App() {
             <Route path="terminal/:op" element={<Terminal />} />
             <Route path="bakim" element={<Maintenance />} />
             <Route path="rehber" element={<Guide />} />
-            {NAV.filter((n) => !BUILT.has(n.to)).map((n) => (
-              <Route key={n.to} path={`${n.to.slice(1)}/*`} element={<Planned />} />
-            ))}
-            <Route path="*" element={<Planned />} />
+            <Route path="admin" element={<Admin />} />
+            <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>
       </Suspense>

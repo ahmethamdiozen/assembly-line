@@ -3,6 +3,7 @@ node_modules
 
 # Derleme çıktıları
 dist
+dist-server
 dist-ssr
 coverage
 *.tsbuildinfo

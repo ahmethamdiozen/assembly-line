@@ -13,7 +13,8 @@ export const env = {
     host: process.env.MSSQL_HOST ?? 'localhost',
     port: Number(process.env.MSSQL_PORT ?? 1433),
     user: process.env.MSSQL_USER ?? 'sa',
-    password: process.env.MSSQL_SA_PASSWORD ?? 'Tm50!Assembly2026',
+    // Canlıda MSSQL_PASSWORD (salt-okur kullanıcının şifresi); MSSQL_SA_PASSWORD geliştirmedeki Docker SQL Server içindir
+    password: process.env.MSSQL_PASSWORD ?? process.env.MSSQL_SA_PASSWORD ?? 'Tm50!Assembly2026',
     database: process.env.MSSQL_DB ?? 'TM50Line',
   },
   collectIntervalMin: collectIntervalMin(),
@@ -23,6 +24,8 @@ export const env = {
   apiHost: process.env.API_HOST ?? '127.0.0.1',
   /** HTTPS (R-072): sertifika yolları verilirse API doğrudan HTTPS sunar; yoksa önüne reverse proxy konur */
   https: { key: process.env.HTTPS_KEY ?? '', cert: process.env.HTTPS_CERT ?? '' },
+  /** HTTPS önündeki reverse proxy'de sonlanıyorsa oturum çerezine yine de Secure eklenir */
+  cookieSecure: process.env.COOKIE_SECURE === '1',
   /** İlk açılışta kullanıcılara atanan PIN / şifre (geliştirme tohumu; canlıda değiştirilmeli) */
   defaultSecret: process.env.DEFAULT_PIN ?? '1234',
 }

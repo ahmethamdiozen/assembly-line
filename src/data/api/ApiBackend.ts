@@ -10,7 +10,12 @@ import type { KpiQuery, KpiReport } from '@/domain/reports'
 import type { TerminalView } from '@/domain/terminal'
 import type { RawTable } from '@/pipeline/rows'
 import { BackendError } from '../Backend'
-import type { AuthState, Backend, BackendEvent, ConnStatus } from '../Backend'
+import type { AdminApi, AdminUser, AuthState, Backend, BackendEvent, ConnStatus } from '../Backend'
+import type { AuditFilter, RetentionCount } from '@/domain/admin'
+import type { BackupInfo, IntegrationTest } from '@/domain/maintenance'
+import { DEFAULT_ROLE_PERMISSIONS } from '@/domain/rbac'
+import type { RolePermissions } from '@/domain/rbac'
+import type { AuditEntry } from '@/domain/types'
 
 /**
  * SUNUCU MODU — veri yolu: SQL Server → collector (3–5 dk) → SQLite → bu REST API.
@@ -33,12 +38,29 @@ interface StatusResponse {
   nextPullAt: number | null
   running: boolean
   error: string | null
+  masterRev: number
 }
+
+interface MasterPayload {
+  master: MasterData
+  rbac: RolePermissions
+  rev: number
+}
+
+const aqs = (f: AuditFilter) =>
+  new URLSearchParams(
+    Object.entries({ from: f.from, to: f.to, user: f.user ?? '', action: f.action ?? '', entity: f.entity ?? '', entityId: f.entityId ?? '', limit: f.limit ?? '', offset: f.offset ?? '' })
+      .filter(([, v]) => v !== '')
+      .map(([k, v]) => [k, String(v)]),
+  ).toString()
 
 export class ApiBackend implements Backend {
   readonly kind = 'api' as const
   readonly sim = null
   private masterData: MasterData = defaultMaster()
+  private rbacData: RolePermissions = DEFAULT_ROLE_PERMISSIONS
+  private rev = -1
+  readonly admin: AdminApi = this.makeAdmin()
   private auth: AuthState = 'unknown'
   private actor: Actor | null = null
   private st: StatusResponse | null = null
@@ -48,6 +70,25 @@ export class ApiBackend implements Backend {
 
   get master(): MasterData {
     return this.masterData
+  }
+
+  rbac(): RolePermissions {
+    return this.rbacData
+  }
+
+  private applyMaster(p: MasterPayload): void {
+    this.masterData = p.master
+    this.rbacData = p.rbac
+    this.rev = p.rev
+  }
+
+  /** Ana veri ya da izinler değişti (bu ya da başka bir kullanıcı): yeniden yükle, izinleri tazele */
+  private async refreshMaster(): Promise<void> {
+    this.applyMaster(await this.req<MasterPayload>('GET', '/master'))
+    const me = await this.req<{ user: Actor }>('GET', '/auth/me').catch(() => null)
+    if (me) this.actor = me.user
+    this.emit('auth')
+    this.emit('data')
   }
 
   private async req<T>(method: string, url: string, body?: unknown): Promise<T> {
@@ -108,8 +149,7 @@ export class ApiBackend implements Backend {
   }
 
   private async onLogin(user: Actor): Promise<void> {
-    const m = await this.req<{ master: MasterData }>('GET', '/master')
-    this.masterData = m.master
+    this.applyMaster(await this.req<MasterPayload>('GET', '/master'))
     this.actor = user
     this.auth = 'authenticated'
     await this.pollStatus()
@@ -124,7 +164,8 @@ export class ApiBackend implements Backend {
       this.st = await this.req<StatusResponse>('GET', '/status')
       const wasDown = this.apiError !== null
       this.apiError = null
-      if (this.st.watermark !== prev || wasDown) this.emit('data')
+      if (this.st.masterRev !== undefined && this.st.masterRev !== this.rev) await this.refreshMaster()
+      else if (this.st.watermark !== prev || wasDown) this.emit('data')
     } catch (e) {
       if ((e as BackendError).status === 0) {
         this.apiError = (e as Error).message
@@ -285,6 +326,47 @@ export class ApiBackend implements Backend {
   confirmOperation(input: { op: string; sn: string; note?: string | null }): Promise<OpConfirmation> {
     return this.cmd('POST', '/terminal/confirm', input)
   }
+  private makeAdmin(): AdminApi {
+    const change = async (method: string, url: string, body?: unknown) => {
+      this.applyMaster(await this.req<MasterPayload>(method, url, body ?? {}))
+      const me = await this.req<{ user: Actor }>('GET', '/auth/me').catch(() => null)
+      if (me) this.actor = me.user
+      this.emit('auth')
+      this.emit('data')
+    }
+    const plain = async (method: string, url: string, body?: unknown) => {
+      await this.cmd(method, url, body)
+    }
+    return {
+      users: async () => (await this.req<{ users: AdminUser[] }>('GET', '/admin/users')).users,
+      createUser: (person, pin, rfid) => change('POST', '/admin/users', { person, pin, rfid }),
+      updateUser: (person) => change('PUT', `/admin/users/${person.personnelNo}`, { person }),
+      setCard: (no, rfid) => plain('PUT', `/admin/users/${no}/card`, { rfid }),
+      setActive: (no, active) => change('POST', `/admin/users/${no}/active`, { active }),
+      resetPin: (no, pin) => plain('POST', `/admin/users/${no}/pin`, { pin }),
+      unlock: (no) => plain('POST', `/admin/users/${no}/unlock`),
+      setRolePermissions: (role, permissions) => change('PUT', `/admin/roles/${role}`, { permissions }),
+      saveConfig: (patch) => change('PUT', '/admin/config', { patch }),
+      saveStation: (op, patch) => change('PUT', `/admin/stations/${op}`, { patch }),
+      saveFeed: (subOp, patch) => change('PUT', `/admin/feeds/${subOp}`, { patch }),
+      saveRule: (code, patch) => change('PUT', `/admin/rules/${code}`, { patch }),
+      saveIntegration: (collectIntervalMin) => change('PUT', '/admin/integration', { collectIntervalMin }),
+      testIntegration: () => this.req<IntegrationTest>('POST', '/admin/integration/test', {}),
+      saveRetention: (retention) => change('PUT', '/admin/retention', { retention }),
+      retentionPreview: async () => (await this.req<{ groups: RetentionCount[] }>('GET', '/admin/retention/preview')).groups,
+      purge: async () => (await this.cmd<{ groups: RetentionCount[] }>('POST', '/admin/retention/purge')).groups,
+      saveBackup: (backup) => change('PUT', '/admin/backup', backup),
+      backups: async () => (await this.req<{ backups: BackupInfo[] }>('GET', '/admin/backups')).backups,
+      backupNow: () => this.cmd<{ backup: BackupInfo; pruned: number }>('POST', '/admin/backups'),
+      audit: (f) => this.req<{ entries: AuditEntry[]; total: number }>('GET', `/audit?${aqs(f)}`),
+      auditCsv: async (f) => {
+        const r = await fetch(`/api/v1/audit.csv?${aqs(f)}`, { credentials: 'same-origin', cache: 'no-store' })
+        if (!r.ok) throw new BackendError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `${r.status}`, r.status)
+        return r.text()
+      },
+    }
+  }
+
   async pullNow(): Promise<void> {
     await this.cmd('POST', '/collector/pull')
     await this.pollStatus()

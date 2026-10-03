@@ -6,7 +6,7 @@
  * prototipinden (TM50.html); kişi adları kurgusaldır. Netleşmemiş değerler docs/acik-konular.md'de.
  */
 import { DEFAULT_SHIFTS } from './shifts'
-import type { AlarmRule, ComponentType, DefectDef, FaultCodeDef, LineConfig, MasterData, Person, Station, StationType, SubFeed, TighteningSpec } from './types'
+import type { AlarmRule, ComponentType, DefectDef, FaultCodeDef, LineConfig, MasterData, Person, Station, StationType, SubFeed, SystemSettings, TighteningSpec } from './types'
 
 const MIN = 60
 
@@ -224,10 +224,23 @@ export const PEOPLE: Person[] = [
   { personnelNo: 'A-0001', name: 'Sistem Yöneticisi', role: 'admin', shift: null, station: null, qualifications: [] },
 ]
 
+/** Bilinen yetkinlikler (admin ekranındaki seçenekler; istasyon kuralı: src/domain/qualifications.ts) */
+export const KNOWN_QUALIFICATIONS = ['Montaj L1', 'Montaj L2', 'Montaj L3', 'Torque Qualified', 'Rework L2', 'Quality Authorized'] as const
+
+/**
+ * Varsayılan saklama süreleri: istasyon olayları 5 yıl, tork 10 yıl, kalite görüntü kayıtları 365 gün,
+ * audit 2 yıl (prototip); izlenebilirlik 10 yıl ve alarm / not 2 yıl varsayımdır (acik-konular.md F4).
+ */
+export const DEFAULT_SETTINGS: SystemSettings = {
+  retention: { trace: 3650, tightening: 3650, images: 365, events: 1825, alarms: 730, audit: 730 },
+  backup: { enabled: true, hour: 2, keep: 14 },
+}
+
 /** Varsayılan ana verinin bağımsız bir kopyası */
 export function defaultMaster(): MasterData {
   return structuredClone({
     config: DEFAULT_CONFIG,
+    settings: DEFAULT_SETTINGS,
     stations: [...MAIN_STATIONS, ...SUB_STATIONS],
     subFeeds: SUB_FEEDS,
     components: COMPONENTS,
@@ -236,6 +249,24 @@ export function defaultMaster(): MasterData {
     faultCodes: FAULT_CODES,
     people: PEOPLE,
   })
+}
+
+/**
+ * Kayıtlı ana veriyi bu sürümün beklediği biçime tamamlar: sonradan eklenen alanlar ve kurallar
+ * varsayılanlarıyla eklenir, admin'in değiştirdiği değerlere dokunulmaz.
+ */
+export function normalizeMaster(stored: Partial<MasterData> | null): MasterData {
+  const d = defaultMaster()
+  if (!stored) return d
+  const m = { ...d, ...stored } as MasterData
+  m.config = { ...d.config, ...stored.config }
+  m.settings = {
+    retention: { ...d.settings.retention, ...stored.settings?.retention },
+    backup: { ...d.settings.backup, ...stored.settings?.backup },
+  }
+  const codes = new Set(m.rules.map((r) => r.code))
+  m.rules = [...m.rules, ...d.rules.filter((r) => !codes.has(r.code))]
+  return m
 }
 
 /** Ana veriye hızlı erişim için indeksler */

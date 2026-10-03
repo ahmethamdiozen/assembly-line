@@ -9,6 +9,10 @@ import type { KpiQuery, KpiReport } from '@/domain/reports'
 import type { TerminalView } from '@/domain/terminal'
 import type { OpConfirmation, StationLogin } from '@/domain/types'
 import type { RawTable } from '@/pipeline/rows'
+import type { AuditFilter, ConfigPatch, FeedPatch, PersonInput, RetentionCount, RulePatch, StationPatch } from '@/domain/admin'
+import type { BackupInfo, IntegrationTest } from '@/domain/maintenance'
+import type { RolePermissions } from '@/domain/rbac'
+import type { AuditEntry, Person, RetentionGroup, RoleId, SystemSettings } from '@/domain/types'
 
 /**
  * Arayüzün veri sözleşmesi. Demo modunda DemoBackend (tüm zincir tarayıcıda) uygular;
@@ -54,9 +58,54 @@ export class BackendError extends Error {
   }
 }
 
+/** Kullanıcının kimlik bilgisi durumu (sunucu modu; demoda giriş rol seçerek yapıldığı için yok) */
+export interface CredentialInfo {
+  rfid: string | null
+  active: boolean
+  locked: boolean
+  failedAttempts: number
+  updatedAt: number
+}
+
+export interface AdminUser extends Person {
+  credential: CredentialInfo | null
+}
+
+/**
+ * Admin ve konfigürasyon (R-010, R-053–R-058). Ana veriyi değiştiren işlemler bittiğinde
+ * `Backend.master` ve izinler güncellenmiş olur.
+ */
+export interface AdminApi {
+  users(): Promise<AdminUser[]>
+  createUser(person: PersonInput, pin: string, rfid: string | null): Promise<void>
+  updateUser(person: PersonInput): Promise<void>
+  setCard(personnelNo: string, rfid: string | null): Promise<void>
+  setActive(personnelNo: string, active: boolean): Promise<void>
+  resetPin(personnelNo: string, pin: string): Promise<void>
+  unlock(personnelNo: string): Promise<void>
+  setRolePermissions(role: RoleId, permissions: Permission[]): Promise<void>
+  saveConfig(patch: ConfigPatch): Promise<void>
+  saveStation(op: string, patch: StationPatch): Promise<void>
+  saveFeed(subOp: string, patch: FeedPatch): Promise<void>
+  saveRule(code: string, patch: RulePatch): Promise<void>
+  saveIntegration(collectIntervalMin: number): Promise<void>
+  testIntegration(): Promise<IntegrationTest>
+  saveRetention(retention: Record<RetentionGroup, number>): Promise<void>
+  retentionPreview(): Promise<RetentionCount[]>
+  purge(): Promise<RetentionCount[]>
+  saveBackup(backup: SystemSettings['backup']): Promise<void>
+  backups(): Promise<BackupInfo[]>
+  backupNow(): Promise<{ backup: BackupInfo; pruned: number }>
+  audit(f: AuditFilter): Promise<{ entries: AuditEntry[]; total: number }>
+  auditCsv(f: AuditFilter): Promise<string>
+}
+
 export interface Backend {
   readonly kind: 'demo' | 'api'
   readonly master: MasterData
+  /** Rol → izin eşlemesi (admin ekranı) */
+  rbac(): RolePermissions
+  readonly admin: AdminApi
   readonly sim: SimControl | null
   start(): void
   ready(): boolean

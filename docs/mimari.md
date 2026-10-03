@@ -11,9 +11,10 @@
 ```
 
 - **Fabrika tarafı:** PLC, tork controller'ları ve vision sistemi verilerini fabrikanın SQL Server'ına yazar. Geliştirmede bunu simülatör yapar. Gerçek veri geldiğinde simülatör kalkar, geri kalan her şey aynen çalışır.
-- **Collector:** sunucu sürecinin içinde zamanlanmış bir iştir. Çekme aralığı `COLLECT_INTERVAL_MIN` ile ayarlanır (3–5 dk). Her turda tablolardan yalnızca yeni satırları (`Id > son okunan`) salt-okur çeker, `src/pipeline/transform.ts` ile anlamlandırır, alarm kurallarını çalıştırır ve sonucu SQLite'a yazar. Yeniden başlarsa kaldığı yerden devam eder.
+- **Collector:** sunucu sürecinin içinde zamanlanmış bir iştir. Çekme aralığı Admin → Entegrasyon'dan ayarlanır (3–5 dk; ilk değer `COLLECT_INTERVAL_MIN`). Her turda tablolardan yalnızca yeni satırları (`Id > son okunan`) salt-okur çeker, `src/pipeline/transform.ts` ile anlamlandırır, alarm kurallarını çalıştırır ve sonucu SQLite'a yazar. Yeniden başlarsa kaldığı yerden devam eder.
 - **SQLite (uygulama DB'si):** sistemin kalıcı veritabanıdır (`node:sqlite`, WAL). Yapı `PRAGMA user_version` ile ileri doğru migration'larla değişir; veri düşürülmez. SQLite'a yazan tek süreç sunucudur.
-- **API:** Fastify, REST/JSON. Arayüz 15 sn'de bir yoklar. WebSocket kullanılmaz.
+- **API:** Fastify, REST/JSON. Arayüz 15 sn'de bir yoklar. WebSocket kullanılmaz. Canlıda derlenmiş arayüzü de aynı adresten sunar (`npm start`).
+- **Günlük işler:** sunucu her gün ayarlanan saatten sonra uygulama veritabanını yedekler ve saklama süresi dolan kayıtları temizler.
 - **Arayüz:** React. Her ekranda "son fabrika verisi" zamanı ve API bağlantı durumu görünür.
 
 ## İki mod
@@ -24,11 +25,11 @@
 | Collector | Sunucuda, 3–5 dk'da bir | Tarayıcıda, aynı dönüştürücü, simülasyon saatine göre aynı aralıkla |
 | Uygulama DB'si | SQLite dosyası | Bellek içi depo |
 | Komutlar (not, Andon, alarm, rework, admin) | API → servisler → SQLite | Aynı servisler → bellek içi depo |
-| Kurulum | Node 22.13+, Docker | Yok (tarayıcı) |
+| Kurulum | Node 22.13+ (geliştirmede Docker'daki SQL Server; canlıda fabrikanın SQL Server'ı) | Yok (tarayıcı) |
 
 Ortak kod `src/` altındadır ve saf TypeScript'tir (Node veya DOM API'si kullanmaz). Sunucu bu kodu `@/` alias'ıyla kullanır.
 
-- `src/domain`: tipler, ana veri, KPI, alarm ve rework kuralları, `Store` arayüzü (komut servisleri Faz 3)
+- `src/domain`: tipler, ana veri, KPI ve raporlar, alarm ve rework kuralları, ekran görünümleri, komutlar (RBAC + audit), admin, `Store` arayüzü
 - `src/pipeline`: SQL satır tipleri, bellek içi "SQL Server", dönüştürücü
 - `src/sim`: simülatör
 
@@ -37,13 +38,14 @@ Ortak kod `src/` altındadır ve saf TypeScript'tir (Node veya DOM API'si kullan
 ## Klasörler
 
 ```
-src/domain/      types, lineDef (tohum ana veri), shifts, alarms, rework, lineState (türetilmiş görünümler),
-                 kpi (KPI + darboğaz), pareto, store/ (Store arayüzü, MemoryStore); services/ Faz 3'te
+src/domain/      types, lineDef (tohum ana veri), shifts, alarms, rework, lineState ve views (türetilmiş görünümler),
+                 kpi, reports, pareto, maintenance, terminal, qualifications, commands, admin, rbac,
+                 store/ (Store arayüzü, MemoryStore, sözleşme testleri)
 src/pipeline/    rows.ts (SQL satır tipleri), rawDb.ts (bellek içi SQL Server), transform.ts (anlamlandırma)
 src/sim/         deterministik hat simülatörü ve demo hikâyeleri
 src/data/        Backend arayüzü, ApiBackend (REST yoklama), DemoBackend (tüm zincir tarayıcıda), zustand store
-src/components/  ui/, layout/, line/, engine/ (TM50 motor illüstrasyonu), station/, charts/, grid/
-src/pages/       ekranlar
+src/components/  ui/, layout/, line/, engine/ (TM50 motor illüstrasyonu), control/, common/, charts/, grid/
+src/pages/       ekranlar; admin/ (Admin sekmeleri)
 server/          sql/schema.sql, simulator/, collector/, api/, db/, auth/, shared/
 docs/            bu dokümanlar
 ```
@@ -58,7 +60,7 @@ docs/            bu dokümanlar
 | Audit | Her komut, giriş ve çıkış `audit_log`'a kullanıcı, zaman, önce / sonra bilgisiyle yazılır (`src/domain/commands.ts`). |
 | HTTPS | `HTTPS_KEY` / `HTTPS_CERT` verilirse API doğrudan HTTPS sunar; ya da önüne reverse proxy konur. Çerezler HTTPS'te `Secure` olur. |
 | Loglar | `logs/app.log` (Fastify / pino JSON): hatalar, 1 sn'den yavaş istekler, collector turları ve hataları, hatalı girişler. Yoklama yüzünden her istek loglanmaz. Açılışta 20 MB'ı geçen dosya `app.log.1` olur. Bakım & Entegrasyon ekranında görüntülenir (izin: `system.view`). |
-| Yedekleme | `npm run db:backup` (SQLite `VACUUM INTO`, sunucu çalışırken de alınır), `npm run db:restore`. |
+| Yedekleme | Günlük otomatik yedek ve Admin'den "Şimdi yedek al" (SQLite `VACUUM INTO`, sunucu çalışırken), son N yedek tutulur; geri yükleme komut satırından, sunucu kapalıyken ([`kurulum.md`](kurulum.md)). |
 | Kalıcılık | SQLite WAL modunda. Yapı değişiklikleri ileri doğru migration'larla yapılır (`server/db/sqlite.ts`; Faz 5'te sürüm 2: istasyon girişi ve operasyon onayı tabloları). Veri düşürülmez. Yeni sürümle gelen izinler kayıtlı rol ayarlarına varsayılan rollerine göre eklenir; admin'in kaldırdığı izinlere dokunulmaz. |
 
 ## Kararlar

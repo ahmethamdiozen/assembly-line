@@ -57,7 +57,7 @@ Kaynak kısaltmaları: **URS** = `ister.pdf` (v1.0) · **BL** = `01_customer_req
 
 | # | Soru | Şu anki varsayım | Kaynak |
 |---|---|---|---|
-| F1 | Kimlik doğrulama: lokal kullanıcı mı, Active Directory mi? RFID okuyucu klavye emülasyonu yapıyor mu? Kart numaraları nereden gelecek? | Lokal kullanıcı: personel no ya da RFID kart no + PIN / şifre (scrypt ile hash'li). Kart okuyucunun klavye gibi giriş alanına yazdığı varsayılıyor. Geliştirmede herkesin ilk PIN'i `1234` ve kart no `RF` + personel no rakamları; canlıda kullanıcılar ve kartlar admin ekranından tanımlanacak (Faz 6). | BL §16 |
+| F1 | Kimlik doğrulama: lokal kullanıcı mı, Active Directory mi? RFID okuyucu klavye emülasyonu yapıyor mu? Kart numaraları nereden gelecek? | Lokal kullanıcı: personel no ya da RFID kart no + PIN / şifre (scrypt ile hash'li). Kart okuyucunun klavye gibi giriş alanına yazdığı varsayılıyor. Geliştirmede herkesin ilk PIN'i `1234` ve kart no `RF` + personel no rakamları; canlıda kullanıcılar ve kartlar Admin → Kullanıcılar & roller'den tanımlanır, PIN'ler sıfırlanır. | BL §16 |
 | F2 | Hangi istasyonlarda teknisyen terminali (tablet / dokunmatik ekran) olacak? | İnsanlı istasyonların hepsinde. | VR |
 | F3 | Alarm eskalasyonu nasıl bildirilecek (ekran, e-posta, SMS)? | Sadece ekranda (eskalasyon süresi dolunca alarm öne çıkar ve önem seviyesi gösterilir). | VR |
 | F4 | Veri saklama süreleri, yedekleme politikası, sunucu ve HTTPS sertifikası? | Varsayılanlar (prototipten): istasyon olayları 5 yıl, tork 10 yıl, kalite görüntüleri 365 gün, audit 2 yıl. Günlük SQLite yedeği. | PR, BL §16 |
@@ -66,3 +66,14 @@ Kaynak kısaltmaları: **URS** = `ister.pdf` (v1.0) · **BL** = `01_customer_req
 | F7 | Teknisyen istasyon girişi ne kadar geçerli? Vardiya bitince otomatik çıkış mı? Bir istasyonda iki teknisyen olabilir mi? | Giriş, yapıldığı vardiyanın sonuna kadar geçerli. İstasyonda tek teknisyen: yeni giriş öncekini kapatır; teknisyen başka istasyona girince eski girişi kapanır. Vardiya planı dışındaki giriş "yedek / takviye" olarak işaretlenir. | VR |
 | F8 | "Operasyonu tamamla" ne anlama geliyor: PLC'ye bitiş sinyali mi, dijital onay mı? Kontrol listesi zorunlu mu? | Dijital onay. Teknisyen istasyona giriş yapmış olmalı ve kontrol listesindeki tüm adımları işaretlemeli. Onay motorun geçmişine ve audit'e yazılır. Fiziksel bitişi PLC bildirir; fabrika sistemine geri yazılmaz (A3). | VR |
 | F9 | Uygulama logları ne kadar saklanmalı? | Her istek loglanmaz (yoklama). Hatalar, yavaş istekler, collector olayları ve hatalı girişler `logs/app.log`'a yazılır. Dosya açılışta 20 MB'ı geçtiyse bir önceki kopya olarak saklanır. Saklama süresi F4 ile birlikte netleşecek. | VR |
+
+## G. Admin ve teslim
+
+| # | Soru | Şu anki varsayım | Kaynak |
+|---|---|---|---|
+| G1 | OP kodları değişebilir mi? Değişirse fabrika verisindeki istasyon kodu da değişecek mi? | OP kodu fabrika verisindeki istasyon koduyla eşleşir; Admin ekranından değişmez (ad, tip, hedef çevrim, PLC / Cell ID, tool, reçete değişir). Kod değişikliği gerekirse collector eşlemesi ve geçmiş kayıtların taşınmasıyla birlikte bir bakım işlemi olarak yapılır. İstenirse admin ekranına "OP kodunu yeniden adlandır" (geçmişi taşıyarak) eklenir. | VR |
+| G2 | Yeni istasyon eklenmesi / çıkarılması (hat değişikliği) | Kapsam dışı: 13 ana + 5 ön montaj istasyonu sabit. Hat yapısı değişirse ana veri, simülatör ve tamamlanma hesabı (13 operasyon) birlikte güncellenir. | URS §4 |
+| G3 | Yedekleme politikası: sıklık, saklama, başka konuma kopyalama, geri yükleme yetkisi | Günde bir otomatik yedek (02:00), son 14 yedek aynı diskte; başka diske / NAS'a kopyalama işletim sistemi görevleriyle (kurulum.md 6). Geri yükleme sunucu kapalıyken komut satırından; arayüzden yapılmaz. | VR, BL §16 |
+| G4 | Saklama süreleri sonunda veri silinmeli mi, arşive mi alınmalı? | Süresi dolan kayıtlar silinir (her gün, yedekten sonra); arşivleme yok. Yedekler o güne kadarki veriyi içerir. Varsayılan süreler F4'te. | VR |
+| G5 | Kullanıcılar silinebilmeli mi? | Silinmez, pasifleştirilir: geçmiş kayıtlarda (operasyon, audit) adı kalır. | VR |
+| G6 | Demo ortamı müşteriyle paylaşılabilir mi? | Kurulumsuz demo GitHub Pages'te herkese açık: <https://ahmethamdiozen.github.io/assembly-line/>. Kurgusal kişi adları ve simüle veri içerir. | Kullanıcı kararı |

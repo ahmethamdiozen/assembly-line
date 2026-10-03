@@ -15,6 +15,18 @@ const LOCK_MS = 5 * 60 * 1000
 
 export class AuthError extends Error {}
 
+/** Admin'in girdiği PIN / kart no geçersiz (400; oturumu düşürmez) */
+export class CredentialError extends Error {}
+
+/** Admin ekranında görünen kimlik bilgisi durumu (şifre hash'i asla dışarı çıkmaz) */
+export interface Credential {
+  rfid: string | null
+  active: boolean
+  locked: boolean
+  failedAttempts: number
+  updatedAt: number
+}
+
 export function hashSecret(secret: string): string {
   const salt = randomBytes(16)
   const hash = scryptSync(secret, salt, 32, { N: 16384, r: 8, p: 1 })
@@ -61,14 +73,79 @@ export class Auth {
     return n
   }
 
+  /** Yeni kullanıcı kaydedilmeden önce PIN ve kartın geçerliliği */
+  validateNew(personnelNo: string, secret: string, rfid: string | null): void {
+    this.checkSecret(secret)
+    this.checkRfid(personnelNo, rfid)
+  }
+
+  hasCredential(personnelNo: string): boolean {
+    return !!this.db.prepare('SELECT 1 FROM app_user WHERE personnel_no = ?').get(personnelNo)
+  }
+
+  private checkSecret(secret: string): void {
+    if (secret.length < 4 || secret.length > 64) throw new CredentialError('PIN / şifre 4–64 karakter olmalı')
+  }
+
+  private checkRfid(personnelNo: string, rfid: string | null): string | null {
+    const v = rfid?.trim() || null
+    if (v === null) return null
+    if (!/^[A-Za-z0-9-]{4,32}$/.test(v)) throw new CredentialError('Kart no 4–32 harf / rakam olmalı')
+    const other = this.db.prepare('SELECT personnel_no FROM app_user WHERE rfid = ? AND personnel_no <> ?').get(v, personnelNo) as { personnel_no: string } | undefined
+    if (other) throw new CredentialError(`Bu kart ${other.personnel_no} kullanıcısına tanımlı`)
+    return v
+  }
+
+  /** Yeni kullanıcının kimlik bilgisi (admin ekranından) */
+  createCredential(personnelNo: string, secret: string, rfid: string | null, now: number): void {
+    this.checkSecret(secret)
+    const card = this.checkRfid(personnelNo, rfid)
+    this.db.prepare('INSERT INTO app_user (personnel_no, rfid, secret_hash, active, updated_at) VALUES (?, ?, ?, 1, ?)').run(personnelNo, card, hashSecret(secret), now)
+  }
+
+  /** PIN / şifre sıfırlama: kilit açılır, kullanıcının açık oturumları kapanır */
   setSecret(personnelNo: string, secret: string, now: number): void {
-    if (secret.length < 4) throw new AuthError('PIN / şifre en az 4 karakter olmalı')
-    this.db.prepare('UPDATE app_user SET secret_hash = ?, failed_attempts = 0, locked_until = NULL, updated_at = ? WHERE personnel_no = ?').run(hashSecret(secret), now, personnelNo)
+    this.checkSecret(secret)
+    const r = this.db.prepare('UPDATE app_user SET secret_hash = ?, failed_attempts = 0, locked_until = NULL, updated_at = ? WHERE personnel_no = ?').run(hashSecret(secret), now, personnelNo)
+    if (r.changes === 0) throw new CredentialError(`${personnelNo} için kimlik bilgisi yok`)
+    this.revokeSessions(personnelNo)
+  }
+
+  setRfid(personnelNo: string, rfid: string | null, now: number): string | null {
+    const card = this.checkRfid(personnelNo, rfid)
+    this.db.prepare('UPDATE app_user SET rfid = ?, updated_at = ? WHERE personnel_no = ?').run(card, now, personnelNo)
+    return card
+  }
+
+  /** Pasif kullanıcı giriş yapamaz; açık oturumları kapanır */
+  setActive(personnelNo: string, active: boolean, now: number): void {
+    this.db.prepare('UPDATE app_user SET active = ?, updated_at = ? WHERE personnel_no = ?').run(active ? 1 : 0, now, personnelNo)
+    if (!active) this.revokeSessions(personnelNo)
+  }
+
+  unlock(personnelNo: string): void {
+    this.db.prepare('UPDATE app_user SET failed_attempts = 0, locked_until = NULL WHERE personnel_no = ?').run(personnelNo)
+  }
+
+  revokeSessions(personnelNo: string): void {
+    this.db.prepare('DELETE FROM session WHERE personnel_no = ?').run(personnelNo)
+  }
+
+  credentials(now: number): Record<string, Credential> {
+    const rows = this.db.prepare('SELECT personnel_no, rfid, active, failed_attempts, locked_until, updated_at FROM app_user').all() as {
+      personnel_no: string
+      rfid: string | null
+      active: number
+      failed_attempts: number
+      locked_until: number | null
+      updated_at: number
+    }[]
+    return Object.fromEntries(rows.map((r) => [r.personnel_no, { rfid: r.rfid, active: !!r.active, locked: !!r.locked_until && r.locked_until > now, failedAttempts: r.failed_attempts, updatedAt: r.updated_at }]))
   }
 
   actorOf(personnelNo: string): Actor | null {
     const p = this.people().find((x) => x.personnelNo === personnelNo)
-    if (!p) return null
+    if (!p || p.active === false) return null
     return { id: p.personnelNo, name: p.name, role: p.role, permissions: this.rbac()[p.role] ?? [] }
   }
 

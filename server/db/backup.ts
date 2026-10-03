@@ -4,12 +4,12 @@
  *   npm run db:restore -- <dosya>      → yedeği geri yükler (sunucu KAPALIYKEN çalıştırın)
  * SQLite'ın VACUUM INTO komutu tutarlı, sıkıştırılmış bir kopya üretir.
  */
-import { copyFileSync, existsSync, mkdirSync, rmSync } from 'node:fs'
+import { copyFileSync, existsSync, rmSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { env, log } from '../shared/env'
+import { createBackup } from './backupLib'
 
 const say = (...a: unknown[]) => log('yedek', ...a)
-const pad = (n: number) => String(n).padStart(2, '0')
 
 if (process.argv.includes('--restore')) {
   const file = process.argv[process.argv.indexOf('--restore') + 1]
@@ -32,11 +32,8 @@ if (process.argv.includes('--restore')) {
     say(`Veritabanı yok: ${env.sqlitePath}`)
     process.exit(1)
   }
-  mkdirSync('backups', { recursive: true })
-  const d = new Date()
-  const out = `backups/tm50-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.db`
   const db = new DatabaseSync(env.sqlitePath, { timeout: 10_000 })
-  db.exec(`VACUUM INTO '${out.replace(/'/g, "''")}'`)
+  const b = createBackup(db)
   db.close()
-  say(`Yedek alındı: ${out}`)
+  say(`Yedek alındı: ${b.file}`)
 }

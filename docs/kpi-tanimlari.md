@@ -88,8 +88,8 @@ Kalan süre, hedef çevrim − geçen süre olarak hesaplanır. Veri 3–5 dk'da
 | VIS-HOLD | OP100 HOLD | Vision | warning | 10 dk | Kalite Ekibi | OP100 HOLD | motor OP100'e tekrar girer |
 | BUF-LOW | Düşük ön montaj buffer'ı | Material | warning | 10 dk | Lojistik | buffer < min | buffer ≥ min |
 | TRC-DUP | Mükerrer komponent seri no | System | critical | 2 dk | Kalite Ekibi | başka motorda takılı S/N okutuldu | doğru parça okutulur |
-| AND-MAT / AND-QUA / AND-PRD | Andon (malzeme / kalite / üretim) | Operator | warning | 5 dk | Lojistik / Kalite / Üretim Lideri | teknisyen Andon açar (Faz 3) | — |
-| NOTE-ERR | Teknisyen hata notu | Operator | warning | 10 dk | Üretim Lideri | "hata" tipinde not (Faz 3) | — |
+| AND-MAT / AND-QUA / AND-PRD | Andon (malzeme / kalite / üretim) | Operator | warning | 5 dk | Lojistik / Kalite / Üretim Lideri | teknisyen Andon açar | — |
+| NOTE-ERR | Teknisyen hata notu | Operator | warning | 10 dk | Üretim Lideri | "hata" tipinde not | — |
 
 **Yaşam döngüsü (R-038):** Detected → Acknowledged → Assigned → Closed. Atama önce onay ister; atanmış alarm yeniden atanabilir. Her adım kullanıcı ve zamanla kaydedilir.
 

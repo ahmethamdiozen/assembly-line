@@ -102,6 +102,8 @@ export interface Store {
   find<K extends TableName>(table: K, q?: Query<Tables[K]>): Tables[K][]
   first<K extends TableName>(table: K, q?: Query<Tables[K]>): Tables[K] | undefined
   count<K extends TableName>(table: K, q?: Query<Tables[K]>): number
+  /** Koşula uyan satırları siler (veri saklama süresi temizliği); silinen satır sayısını döndürür */
+  deleteWhere<K extends TableName>(table: K, q: Omit<Query<Tables[K]>, 'orderBy' | 'desc' | 'limit' | 'offset'>): number
   kvGet<T>(key: string): T | null
   kvSet(key: string, value: unknown): void
   /** Adlandırılmış sayaç (alarm ve rework numaraları için) */

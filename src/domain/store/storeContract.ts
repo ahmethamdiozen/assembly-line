@@ -78,6 +78,18 @@ export function storeContract(name: string, make: () => Store): void {
       expect(s.find('device', { where: { online: true } }).map((d) => d.id)).toEqual(['D2'])
     })
 
+    it('koşula uyan satırları siler; indeksler ve sıralama tutarlı kalır', () => {
+      const s = make()
+      for (let i = 0; i < 6; i++) s.insert('motor_op', op(`o${i}`, `M${i % 2}`, 'OP010', i * 100, i < 5 ? i * 100 + 50 : null))
+      expect(s.deleteWhere('motor_op', { notNull: ['end'], range: { field: 'start', lt: 250 } })).toBe(3)
+      expect(s.find('motor_op').map((r) => r.id)).toEqual(['o3', 'o4', 'o5'])
+      expect(s.find('motor_op', { where: { sn: 'M0' } }).map((r) => r.id)).toEqual(['o4'])
+      expect(s.count('motor_op', { where: { op: 'OP010' } })).toBe(3)
+      expect(s.deleteWhere('motor_op', { range: { field: 'start', lt: 0 } })).toBe(0)
+      s.insert('motor_op', op('o0', 'M0', 'OP010', 1))
+      expect(s.get('motor_op', 'o0')?.start).toBe(1)
+    })
+
     it('anahtar-değer ve sayaçlar', () => {
       const s = make()
       expect(s.kvGet('x')).toBeNull()

@@ -106,6 +106,8 @@ export interface Person {
   shift: Shift['id'] | null
   station: string | null
   qualifications: string[]
+  /** Pasif kullanıcı giriş yapamaz; kayıtlarda adı kalır (tanımsızsa aktif) */
+  active?: boolean
 }
 
 export type Severity = 'critical' | 'warning' | 'info'
@@ -151,8 +153,19 @@ export interface FaultCodeDef {
   text: string
 }
 
+/** Veri saklama grupları (R-010): her grup kendi süresiyle temizlenir */
+export type RetentionGroup = 'trace' | 'tightening' | 'images' | 'events' | 'alarms' | 'audit'
+
+export interface SystemSettings {
+  /** Grup başına saklama süresi (gün) */
+  retention: Record<RetentionGroup, number>
+  /** Otomatik yedek (sunucu modu): her gün `hour`'da, son `keep` yedek tutulur */
+  backup: { enabled: boolean; hour: number; keep: number }
+}
+
 export interface MasterData {
   config: LineConfig
+  settings: SystemSettings
   /** Ana hat (seq sırasıyla) + ön montaj */
   stations: Station[]
   subFeeds: SubFeed[]

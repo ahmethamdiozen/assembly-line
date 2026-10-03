@@ -9,9 +9,9 @@ Kaynak: `01_customer_requirements_clean.md`. Durumlar baseline §18 kurallarıyl
 | `MISSING` | Henüz yok |
 | `UNCLEAR` | İster netleşmeden değerlendirilemiyor |
 
-**Son güncelleme:** Faz 5 sonu. Faz sütunu plandaki hedef fazı gösterir. Üretmek için: `npm run docs:matrix`.
+**Son güncelleme:** Faz 6 sonu. Faz sütunu plandaki hedef fazı gösterir. Üretmek için: `npm run docs:matrix`.
 
-**Özet:** 81 ister · IMPLEMENTED 60 · PARTIAL 15 · MISSING 6 · UNCLEAR 0
+**Özet:** 81 ister · IMPLEMENTED 73 · PARTIAL 8 · MISSING 0 · UNCLEAR 0
 
 ## 1. General System and Users
 
@@ -26,7 +26,7 @@ Kaynak: `01_customer_requirements_clean.md`. Durumlar baseline §18 kurallarıyl
 | R-007 | — | A Supervisor shall be able to view the line, review station performance, acknowledge/assign/close alarms and track rework. | 4 | `IMPLEMENTED` | Supervisor hattı ve istasyon performansını görür (Kontrol Merkezi), alarmları onaylar / atar / kapatır (Alarm Merkezi), rework'ü takip eder (Kalite & Rework). Tarayıcı testiyle doğrulandı. |
 | R-008 | — | A Quality user shall be able to access OP100 quality results, nonconformities, motor images, rework records and re-inspection records. | 4 | `PARTIAL` | Kalite rolü OP100 sonuçlarını, NOK / HOLD'ları, rework ve re-QC kayıtlarını görür ve yönetir (Kalite & Rework, Motor Takibi). Motor görüntüleri motora bağlı ama dosyalar görüntü deposu bağlantısı netleşene kadar yer tutucu (acik-konular.md C4). |
 | R-009 | — | A Maintenance / Automation user shall be able to access PLC/equipment status, sensor/IO information, alarms and integration-health information. | 5 | `IMPLEMENTED` | Bakım & Entegrasyon: PLC / tork / kamera heartbeat'leri, sensör / IO, istasyon bakım metrikleri, collector ve SQL Server sağlığı, ham fabrika tabloları, uygulama logları (`Maintenance.tsx`, `maintenance.ts`; tarayıcı testi). Alarmlar Alarm Merkezi'nde. |
-| R-010 | — | An Admin shall be able to manage station master data, users/roles, routing, alarm rules, integration settings and data-retention settings. | 6 | `MISSING` |  |
+| R-010 | — | An Admin shall be able to manage station master data, users/roles, routing, alarm rules, integration settings and data-retention settings. | 6 | `IMPLEMENTED` | Admin ekranı (`src/pages/Admin.tsx`, `src/domain/admin.ts`): istasyon ana verisi, kullanıcı / rol / izin, ön montaj besleme, alarm kuralları, entegrasyon (çekme aralığı, bağlantı testi), saklama süreleri ve yedek. Her değişiklik doğrulanır ve audit'e yazılır (birim, API ve tarayıcı testleri; kabul AC-10). |
 
 ## 2. Main Assembly Line
 
@@ -119,12 +119,12 @@ Kaynak: `01_customer_requirements_clean.md`. Durumlar baseline §18 kurallarıyl
 
 | İster | Öncelik | Özet | Faz | Durum | Kanıt / not |
 |---|---|---|---|---|---|
-| R-053 | High | Admin shall be able to manage OP code, operation name, station type, target cycle, PLC/Cell ID and tool information. | 6 | `MISSING` |  |
-| R-054 | High | Users, roles and their permissions shall be manageable. | 6 | `MISSING` |  |
-| R-055 | High | Subassembly → main-line feed/routing relationships shall be configurable. | 6 | `MISSING` |  |
-| R-056 | High | Alarm rules such as severity, escalation time and default responsible team shall be configurable. | 6 | `PARTIAL` | Alarm kuralları ana veride: severity, eskalasyon süresi, varsayılan ekip, açık / kapalı (eskalasyon testli). Admin ekranı Faz 6. |
+| R-053 | High | Admin shall be able to manage OP code, operation name, station type, target cycle, PLC/Cell ID and tool information. | 6 | `PARTIAL` | Admin → Hat & istasyonlar: operasyon adı, istasyon tipi, hedef çevrim, PLC / Cell ID, tool, reçete; takt, eşikler ve vardiyalar (testli). OP kodu fabrika verisindeki istasyon koduyla eşleştiği için ekrandan değişmez; değişiklik collector eşlemesiyle birlikte yapılır (acik-konular.md G1). |
+| R-054 | High | Users, roles and their permissions shall be manageable. | 6 | `IMPLEMENTED` | Admin → Kullanıcılar & roller: kullanıcı ekleme / güncelleme / pasifleştirme, istasyon ve vardiya ataması, yetkinlikler, kart, PIN sıfırlama (oturumlar kapanır), kilit açma; rol → izin matrisi açık oturumlarda hemen geçerli. Kilitlenmeye karşı korumalar (son admin, kendi rolü) testli. |
+| R-055 | High | Subassembly → main-line feed/routing relationships shall be configurable. | 6 | `IMPLEMENTED` | Admin → Ön montaj beslemesi: beslenen istasyon, kit, buffer min / max, günlük hedef; bir istasyonu iki hücre besleyemez (testli, kabul AC-10). |
+| R-056 | High | Alarm rules such as severity, escalation time and default responsible team shall be configurable. | 6 | `IMPLEMENTED` | Admin → Alarm kuralları: önem, eskalasyon süresi, varsayılan ekip, açık / kapalı; değişiklik yeni alarmlara hemen uygulanır (testli, kabul AC-10). |
 | R-057 | High | Connection/heartbeat status of PLC, tightening, database, live-data channel and camera/vision integrations shall be displayable. | 6 | `IMPLEMENTED` | Bakım & Entegrasyon sağlık kutuları: fabrika SQL Server (collector son turu / hatası), canlı veri kanalı (veri tazeliği), PLC, tork controller / tool, kamera, uygulama veritabanı; collector tur geçmişi ve "Şimdi çek" (tarayıcı testi; gerçek SQL Server'la doğrulandı). |
-| R-058 | High | Critical user actions, alarm changes, rework assignments and configuration/master-data changes shall be written to an audit log with user and timestamp information. | 3, 6 | `PARTIAL` | Not, alarm, Andon, rework, HOLD, tork dışa aktarımı, giriş / çıkış, istasyon girişi (reddedilenler dahil), operasyon onayı ve "Şimdi çek" audit log'a yazılır. Konfigürasyon / ana veri değişiklikleri ve audit ekranı Faz 6. |
+| R-058 | High | Critical user actions, alarm changes, rework assignments and configuration/master-data changes shall be written to an audit log with user and timestamp information. | 3, 6 | `IMPLEMENTED` | Kullanıcı işlemleri, alarm ve rework değişiklikleri, istasyon girişleri, operasyon onayları, dışa aktarımlar ve tüm konfigürasyon / ana veri değişiklikleri audit'e kullanıcı, zaman ve önce / sonra değerleriyle yazılır. Admin → Audit kaydı: filtre, önce / sonra farkı, CSV (testli, kabul AC-08, AC-10). |
 
 ## 12. Data and Integration
 
@@ -153,18 +153,18 @@ Kaynak: `01_customer_requirements_clean.md`. Durumlar baseline §18 kurallarıyl
 | İster | Öncelik | Özet | Faz | Durum | Kanıt / not |
 |---|---|---|---|---|---|
 | R-071 | — | Standard page/screen interactions shall respond to user action within 2 seconds. | 3 | `IMPLEMENTED` | Ölçüm: özet API 8 ms, istasyon ayrıntısı 2 ms, 3 dk'lık collector turu 6–40 ms, 24 saatlik ilk okuma 0,8 sn. 1 sn'den yavaş istekler logda işaretlenir. |
-| R-072 | — | HTTPS shall be used and user passwords shall not be stored in plain text. | 3 | `PARTIAL` | PIN / şifreler scrypt ile hash'li (testli); oturum çerezi HttpOnly, HTTPS'te Secure. HTTPS sertifika ayarı var (`HTTPS_KEY` / `HTTPS_CERT`); canlı kurulum dokümanı Faz 6. |
+| R-072 | — | HTTPS shall be used and user passwords shall not be stored in plain text. | 3 | `IMPLEMENTED` | HTTPS doğrudan (`HTTPS_KEY` / `HTTPS_CERT`) ya da reverse proxy ile (`COOKIE_SECURE`), kurulum adımı olarak (docs/kurulum.md 4). PIN / şifreler scrypt ile hash'li (testli); oturum çerezi HttpOnly, SameSite=Strict, HTTPS'te Secure; temel güvenlik başlıkları. |
 | R-073 | — | Application and database error logs shall be retained and accessible to the maintenance team. | 5 | `IMPLEMENTED` | Uygulama logu `logs/app.log` (hatalar, yavaş istekler, collector turları ve hataları, hatalı girişler; 20 MB'ta döndürülür). Bakım & Entegrasyon'da seviye filtreli log ekranı ve sistem bilgisi (izin: system.view; testli). |
 | R-074 | — | When the data connection is temporarily interrupted, the connection state shall be clearly shown to the user. | 3 | `IMPLEMENTED` | Sunucuya ulaşılamazsa "Sunucuya ulaşılamıyor", fabrika verisi gecikirse "Fabrika verisi gecikiyor" uyarısı; eldeki veri ekranda kalır (tarayıcı testiyle doğrulandı). |
-| R-075 | — | A data backup and restore mechanism shall be defined before commissioning. | 6 | `PARTIAL` | Yedekleme ve geri yükleme komutları (`npm run db:backup` / `db:restore`, bütünlük kontrolüyle). Yedekleme sıklığı ve saklama politikası netleşmedi. Teknik kapsam netleşmedi (baseline §16). |
+| R-075 | — | A data backup and restore mechanism shall be defined before commissioning. | 6 | `IMPLEMENTED` | Günlük otomatik yedek (saat ve sayı Admin'den), "Şimdi yedek al", geri yükleme komutu (bütünlük kontrolüyle), başka diske kopyalama ve tatbikat adımları docs/kurulum.md 6'da. Yedek politikası müşteriyle netleşecek (acik-konular.md G3). |
 
 ## 15. Supplier Deliverables
 
 | İster | Öncelik | Özet | Faz | Durum | Kanıt / not |
 |---|---|---|---|---|---|
-| R-076 | — | Analysis and detailed design documentation shall be delivered. | 6 | `PARTIAL` | docs/mimari.md, docs/sql-veri-sozlesmesi.md, docs/kpi-tanimlari.md, docs/acik-konular.md. Detay tasarım dokümanı Faz 6. |
-| R-077 | — | Approved UI/UX screen designs or an interactive prototype shall be delivered. | 6 | `PARTIAL` | Kontrol Merkezi, Motor Takibi, Kalite & Rework, Alarm Merkezi, Tork, KPI & Raporlar, Teknisyen Terminali, Bakım & Entegrasyon ve Metrik Rehberi etkileşimli olarak çalışıyor (kurulumsuz demo dahil). Admin ekranları Faz 6. |
-| R-078 | — | Installation/deployment documentation shall be delivered. | 6 | `PARTIAL` | README'de geliştirme kurulumu (Mac / Windows, Docker). Canlı kurulum dokümanı Faz 6. |
-| R-079 | — | Admin and end-user documentation shall be delivered. | 6 | `MISSING` |  |
-| R-080 | — | Source code and build/deployment instructions shall be delivered if included in the contract scope. | 6 | `PARTIAL` | Kaynak kod ve build / çalıştırma talimatları README'de; teslim kapsamı sözleşmeye bağlı. Sözleşme kapsamına bağlı. |
-| R-081 | — | FAT/SAT or equivalent acceptance-test scenarios and test results shall be delivered. | 6 | `MISSING` |  |
+| R-076 | — | Analysis and detailed design documentation shall be delivered. | 6 | `IMPLEMENTED` | docs/detay-tasarim.md (bileşenler, veritabanı, akışlar, izinler, ekranlar, hata yönetimi, test stratejisi), docs/mimari.md, docs/sql-veri-sozlesmesi.md, docs/kpi-tanimlari.md, docs/api.md, docs/acik-konular.md. |
+| R-077 | — | Approved UI/UX screen designs or an interactive prototype shall be delivered. | 6 | `IMPLEMENTED` | Bütün ekranlar etkileşimli olarak çalışıyor ve kurulumsuz demo olarak yayında: https://ahmethamdiozen.github.io/assembly-line/ (her gönderimde testlerden sonra GitHub Pages'e). |
+| R-078 | — | Installation/deployment documentation shall be delivered. | 6 | `IMPLEMENTED` | docs/kurulum.md: hedef ortam, salt-okur SQL Server kullanıcısı, kurulum, HTTPS, Windows servisi (NSSM) / systemd, yedek ve geri yükleme, güncelleme, izleme, sorun giderme. Geliştirme kurulumu README'de. |
+| R-079 | — | Admin and end-user documentation shall be delivered. | 6 | `IMPLEMENTED` | docs/kullanim-kilavuzu.md: rollere göre kullanım (teknisyen, üretim lideri, kalite, bakım) ve admin kılavuzu, sık sorulanlar. |
+| R-080 | — | Source code and build/deployment instructions shall be delivered if included in the contract scope. | 6 | `IMPLEMENTED` | Kaynak kod GitHub'da (https://github.com/ahmethamdiozen/assembly-line); derleme ve çalıştırma README ve docs/kurulum.md'de; CI iş akışı `.github/workflows/pages.yml`. |
+| R-081 | — | FAT/SAT or equivalent acceptance-test scenarios and test results shall be delivered. | 6 | `IMPLEMENTED` | docs/kabul-testleri.md: AC-01…AC-10 senaryoları (adımlar, beklenen sonuç, otomatik karşılık) ve SAT ek senaryoları; `npm run test:kabul` başsız Chrome'la çalıştırır, sonuçlar docs/kabul-sonuclari.md'de; CI her gönderimde çalıştırır. |

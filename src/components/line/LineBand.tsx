@@ -232,6 +232,7 @@ function SubCell({ s, selected, onSelect }: { s: SubView; selected: boolean; onS
       type="button"
       onClick={onSelect}
       aria-pressed={selected}
+      aria-label={`${s.station.op} ${s.station.name}, ${style.label}`}
       className={cn(
         'relative flex flex-col gap-1.5 overflow-hidden rounded-lg border bg-card px-3 pb-2.5 pt-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
         selected ? 'border-accent bg-accent-bg/60 shadow-[0_0_0_1px_var(--accent)]' : 'hover:border-border-strong hover:bg-steel-1/60',

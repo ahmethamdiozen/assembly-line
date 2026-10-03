@@ -126,6 +126,19 @@ export class MemoryStore implements Store {
     return this.find(table, { ...q, limit: undefined, offset: undefined }).length
   }
 
+  deleteWhere<K extends TableName>(table: K, q: Query<Tables[K]>): number {
+    const tb = this.t(table)
+    let n = 0
+    for (const row of [...tb.rows.values()]) {
+      if (!matches(row, q)) continue
+      tb.delIdx(row)
+      tb.rows.delete(row.id)
+      tb.order.delete(row.id)
+      n++
+    }
+    return n
+  }
+
   kvGet<T>(key: string): T | null {
     const v = this.kv.get(key)
     return v === undefined ? null : (JSON.parse(v) as T)
