@@ -1,0 +1,35 @@
+# Bağımlılıklar
+node_modules
+
+# Derleme çıktıları
+dist
+dist-ssr
+coverage
+*.tsbuildinfo
+.vite
+
+# Loglar
+logs
+*.log
+npm-debug.log*
+
+# Ortam değişkenleri / gizli bilgiler
+.env
+.env.*
+!.env.example
+!.env.demo
+*.local
+
+# Editör ve işletim sistemi dosyaları
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+Thumbs.db
+
+# Claude Code yerel ayarları
+.claude/
+
+# Uygulama veritabanı (SQLite), yedekler ve simülatör durumu
+/data/
+/backups/

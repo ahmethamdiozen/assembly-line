@@ -1,0 +1,164 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+@import "@fontsource/barlow-semi-condensed/500.css";
+@import "@fontsource/barlow-semi-condensed/600.css";
+@import "@fontsource/barlow-semi-condensed/700.css";
+
+/*
+ * TM50 görsel dili (URS §15 / R-066–R-070): beyaz / kırık beyaz zemin, koyu tema yok.
+ * Açık mavi = bilgi ve aktif seçim · soft pembe = kritik hata / NOK · pastel sarı = uyarı / takt riski.
+ * Renk tek başına durum anlatmaz; her durum ikon + metinle birlikte gösterilir.
+ * Tonlar müşteri prototipinin "WHITE UI" katmanından alındı; metin tonları WCAG AA'ya göre koyulaştırıldı.
+ */
+:root {
+  color-scheme: light;
+  --background: #f7f8fa;
+  --card: #ffffff;
+  --fg: #1f2a33;
+  --fg-2: #56636e;
+  --fg-3: #87919a;
+  --border: #e2e7ec;
+  --border-strong: #cbd5dc;
+  --grid: #edf0f2;
+  --axis: #c9d2d9;
+  --wash: rgba(31, 42, 51, 0.045);
+  --neutral: #f1f4f6;
+
+  /* Durumlar: dolgu (ikon, çubuk) · zemin (rozet, satır) · metin */
+  --good: #43a978;
+  --good-bg: #e4f4ec;
+  --good-text: #2b7550;
+  --warning: #d9a22b;
+  --warning-bg: #fff3d6;
+  --warning-text: #835f12;
+  --critical: #df6b80;
+  --critical-bg: #fde9ee;
+  --critical-text: #ab3a55;
+  --info: #65add0;
+  --info-bg: #eaf5fa;
+  --info-text: #2b6787;
+  --offline: #9aa5ae;
+  --offline-bg: #eef1f3;
+  --offline-text: #4f5b65;
+
+  /* Vurgu (birincil buton, odak halkası, seçim) */
+  --accent: #3d8db8;
+  --accent-bg: #e8f4fa;
+  --accent-border: #b8d8e7;
+
+  /* Konveyör ve makine nötrleri */
+  --steel-1: #eef2f5;
+  --steel-2: #cdd6dd;
+  --steel-3: #8796a3;
+  --steel-4: #5f6b75;
+
+  /* Grafik serileri */
+  --series-1: #3d8db8;
+  --series-2: #e0895a;
+  --series-3: #43a978;
+  --series-4: #d9a93a;
+  --series-5: #df6b80;
+  --series-6: #8e7cc3;
+  --series-7: #4fb0ad;
+  --series-8: #9aa5ae;
+}
+
+@theme inline {
+  --font-sans: "Inter Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* OP kodları, KPI değerleri, seri numaraları: endüstriyel tabela hissi veren dar yüz */
+  --font-display: "Barlow Semi Condensed", "Inter Variable", system-ui, sans-serif;
+  --color-background: var(--background);
+  --color-card: var(--card);
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-fg-3: var(--fg-3);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-wash: var(--wash);
+  --color-neutral: var(--neutral);
+  --color-grid: var(--grid);
+  --color-good: var(--good);
+  --color-good-bg: var(--good-bg);
+  --color-good-text: var(--good-text);
+  --color-warning: var(--warning);
+  --color-warning-bg: var(--warning-bg);
+  --color-warning-text: var(--warning-text);
+  --color-critical: var(--critical);
+  --color-critical-bg: var(--critical-bg);
+  --color-critical-text: var(--critical-text);
+  --color-info: var(--info);
+  --color-info-bg: var(--info-bg);
+  --color-info-text: var(--info-text);
+  --color-offline: var(--offline);
+  --color-offline-bg: var(--offline-bg);
+  --color-offline-text: var(--offline-text);
+  --color-accent: var(--accent);
+  --color-accent-bg: var(--accent-bg);
+  --color-accent-border: var(--accent-border);
+  --color-steel-1: var(--steel-1);
+  --color-steel-2: var(--steel-2);
+  --color-steel-3: var(--steel-3);
+  --color-steel-4: var(--steel-4);
+  --color-s1: var(--series-1);
+  --color-s2: var(--series-2);
+  --color-s3: var(--series-3);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+* {
+  border-color: var(--border);
+}
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+/* OPxxx kodları görsel hiyerarşide kolay ayırt edilsin (R-069) */
+.opcode {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+/* KPI değerleri, seri numaraları, süreler */
+.display {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--axis);
+  border-radius: 10px;
+  border: 2px solid var(--background);
+}
+/* AG Grid: seçili alarm ve NOK satırları */
+.ag-row-selected-alarm {
+  background-color: var(--accent-bg) !important;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.ag-row-nok {
+  background-color: color-mix(in srgb, var(--critical-bg) 70%, transparent) !important;
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.pulse-dot {
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pulse-dot { animation: none; }
+}
